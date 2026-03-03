@@ -1,0 +1,90 @@
+# Airgo を GCP Cloud Run にデプロイし、airgo.ktrips.net で公開
+# main ブランチへの push で自動デプロイ
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # 手動実行も可能
+
+env:
+  REGION: asia-northeast1
+  SERVICE_NAME: airgo
+  REPOSITORY: airgo-repo
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity)
+        if: secrets.WIF_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Authenticate to Google Cloud (Service Account Key)
+        if: secrets.WIF_PROVIDER == ''
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Enable required APIs
+        run: |
+          gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com --quiet
+
+      - name: Create Artifact Registry repository
+        run: |
+          gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
+            --location=${{ env.REGION }} 2>/dev/null || \
+          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --description="Airgo Docker images" \
+            --quiet
+
+      - name: Build and Deploy to Cloud Run
+        run: |
+          gcloud builds submit \
+            --config=cloudbuild.yaml \
+            --substitutions=_SERVICE_NAME=${{ env.SERVICE_NAME }},_REGION=${{ env.REGION }},_REPOSITORY=${{ env.REPOSITORY }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
+        env:
+          CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Map custom domain
+        run: |
+          # airgo.ktrips.net を Cloud Run にマッピング（初回のみ）
+          gcloud run domain-mappings create \
+            --service=${{ env.SERVICE_NAME }} \
+            --domain=airgo.ktrips.net \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --quiet 2>/dev/null || echo "Domain mapping may already exist or domain verification needed"
+        continue-on-error: true
+
+      - name: Deployment summary
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "## Deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cloud Run URL:** $URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **Custom domain:** https://airgo.ktrips.net" >> $GITHUB_STEP_SUMMARY
