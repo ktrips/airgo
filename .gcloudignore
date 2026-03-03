@@ -1,0 +1,12 @@
+# デプロイに含めないファイル（public-trips.json は必ず含める）
+# 注: public-trips.json は除外しないこと
+.git
+.gitignore
+.gcloudignore
+*.md
+.dockerignore
+cloudbuild.yaml
+deploy.sh
+.env
+*.log
+Arc/

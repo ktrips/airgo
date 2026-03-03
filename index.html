@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Airgo — 写真と地図の旅</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <button type="button" class="hamburger-btn" id="hamburgerBtn" aria-label="メニュー">
+        <span></span><span></span><span></span>
+      </button>
+      <h1 class="header-title header-title-link" id="headerTitle" title="ホームに戻る">Airgo</h1>
+      <div class="header-trip-area">
+        <div class="header-controls-row" id="headerControlsRow">
+          <span class="trip-name-nav" id="tripNameNav" style="display:none">
+            <span class="trip-info-name" id="tripInfoName"></span>
+            <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="photoPrevBtnHeader">前へ</button>
+            <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="photoNextBtnHeader">次へ</button>
+          </span>
+          <span class="header-controls-sep" id="headerControlsSep" style="display:none">|</span>
+          <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled>▶ 再生</button>
+          <button type="button" class="btn btn-secondary btn-sm stop-btn" id="stopBtn" disabled>停止</button>
+          <select id="intervalSelect">
+            <option value="1">1秒</option>
+            <option value="3" selected>3秒</option>
+            <option value="5">5秒</option>
+          </select>
+        </div>
+        <div class="trip-info-meta-row" id="tripInfoMetaRow" style="display:none">
+          <div class="trip-info-meta" id="tripInfoMeta"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- メニューパネル（左からスライド） -->
+    <div class="menu-overlay" id="menuOverlay"></div>
+    <aside class="menu-panel" id="menuPanel">
+      <div class="menu-header">
+        <h2>メニュー</h2>
+        <button type="button" class="menu-close" id="menuClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="menu-body">
+        <p class="menu-app-desc">Airgo — 地図と写真でエア旅行した気分になるアプリ</p>
+        <section class="menu-section menu-auth-section">
+          <button type="button" class="btn btn-primary menu-full" id="authBtn">ログイン</button>
+        </section>
+        <section class="menu-section menu-mobile-controls" id="menuMobileControls">
+          <h3>操作</h3>
+          <div class="menu-row">
+            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled>▶ 再生</button>
+            <button type="button" class="btn btn-secondary btn-sm stop-btn" id="menuStopBtn" disabled>停止</button>
+          </div>
+          <div class="menu-row">
+            <span class="photo-nav-label photo-all-photos-btn all-photos-btn" id="menuAllPhotosBtn" title="全ての写真をサムネイル表示">全ての写真</span>
+            <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="menuPrevBtn">前へ</button>
+            <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="menuNextBtn">次へ</button>
+          </div>
+        </section>
+        <section class="menu-section">
+          <h3>トリップ</h3>
+          <div class="menu-field editor-only" id="tripNameField">
+            <input type="text" id="tripNameInput" class="menu-input" placeholder="トリップ名を入力">
+          </div>
+          <div class="menu-field editor-only" id="tripDescField">
+            <textarea id="tripDescInput" class="menu-input" rows="2" placeholder="トリップの説明（任意）"></textarea>
+            <div class="trip-gpx-info" id="tripGpxInfo" style="display:none"></div>
+          </div>
+          <div class="menu-field editor-only" id="tripUrlField">
+            <input type="url" id="tripUrlInput" class="menu-input" placeholder="トリップのURL（任意）">
+          </div>
+          <div class="menu-field editor-only" id="tripPublicField">
+            <label class="menu-checkbox">
+              <input type="checkbox" id="tripPublicInput">
+              <span>公開する（ログインなしで閲覧可能）</span>
+            </label>
+          </div>
+          <div class="menu-row">
+            <button type="button" class="btn btn-primary editor-only" id="saveTripBtn" disabled>保存</button>
+            <button type="button" class="btn btn-secondary editor-only" id="newTripBtn">新規</button>
+          </div>
+          <div class="menu-field login-required" id="tripSelectField">
+            <label>トリップを選択</label>
+            <select id="tripSelect" class="menu-select">
+              <option value="">— 読み込む —</option>
+            </select>
+          </div>
+          <div class="menu-row">
+            <button type="button" class="btn btn-secondary login-required" id="loadTripBtn">読み込み</button>
+            <button type="button" class="btn btn-secondary btn-danger editor-only" id="deleteTripBtn" disabled>削除</button>
+          </div>
+        </section>
+        <section class="menu-section editor-only" id="uploadSection">
+          <h3>写真・GPX</h3>
+          <div class="menu-upload" id="uploadZone">
+            <input type="file" id="photoInput" accept="image/*,.jpg,.jpeg,.JPG,.JPEG" multiple hidden>
+            <span class="menu-upload-icon">📷</span>
+            <span>写真をアップロード</span>
+            <p class="menu-upload-hint" id="appendHint" style="display:none">トリップ選択中: 追加</p>
+          </div>
+          <div class="menu-upload" id="gpxZone">
+            <input type="file" id="gpxInput" accept=".gpx,application/gpx+xml" hidden>
+            <span class="menu-upload-icon">📍</span>
+            <span>GPXファイル</span>
+          </div>
+        </section>
+        <section class="menu-section">
+          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="公開トリップを Airgo フォルダの public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
+          <div class="menu-row editor-only">
+            <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
+            <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
+          </div>
+        </section>
+        <p class="menu-hint editor-only-hint" id="editorOnlyHint" style="display:none">写真の閲覧・自動再生は可能です。アップロードするにはログインしてください</p>
+      </div>
+    </aside>
+
+    <!-- 写真の説明・URL編集モーダル -->
+    <div class="modal-overlay" id="photoEditModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>写真の説明・URL</h2>
+          <button type="button" class="modal-close" id="photoEditClose" aria-label="閉じる">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="photo-edit-preview" id="photoEditPreview"></div>
+          <div class="modal-field">
+            <label for="photoEditDesc">説明:</label>
+            <textarea id="photoEditDesc" class="modal-input" rows="3" placeholder="写真の説明を入力"></textarea>
+          </div>
+          <div class="modal-field">
+            <label for="photoEditUrl">URL:</label>
+            <input type="url" id="photoEditUrl" class="modal-input" placeholder="https://...">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" id="photoEditSave">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main" id="mainArea">
+      <div class="map-container">
+        <div id="map"></div>
+        <div class="play-photo-overlay" id="playPhotoOverlay">
+          <button type="button" class="play-overlay-close" id="playOverlayClose" aria-label="閉じる">&times;</button>
+          <div class="play-overlay-photo">
+            <img src="" alt="">
+          </div>
+          <div class="play-overlay-gpx" id="playOverlayGpx"></div>
+          <div class="play-overlay-info"></div>
+          <div class="play-overlay-place"></div>
+          <div class="play-overlay-desc"></div>
+          <div class="play-overlay-url"></div>
+        </div>
+      </div>
+      <aside class="public-trips-panel" id="publicTripsPanel">
+        <h3 class="public-trips-title">公開トリップ</h3>
+        <div class="public-trips-list" id="publicTripsList"></div>
+      </aside>
+    </div>
+
+    <!-- 画面下の全写真サムネイル -->
+    <div class="all-photos-thumbnails" id="allPhotosThumbnails">
+      <button type="button" class="all-photos-close" id="allPhotosClose" title="サムネイルを非表示">閉じる &times;</button>
+      <div class="all-photos-strip" id="allPhotosStrip"></div>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- ログインモーダル -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal auth-modal">
+      <div class="modal-header">
+        <h2>アップロード用ログイン</h2>
+        <button type="button" class="modal-close" id="authModalClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="auth-hint">写真・GPXのアップロードにはログインが必要です。閲覧は誰でも可能です。</p>
+        <div class="modal-field">
+          <label for="authUser">ユーザー名</label>
+          <input type="text" id="authUser" class="modal-input" placeholder="ユーザー名" autocomplete="username">
+        </div>
+        <div class="modal-field">
+          <label for="authPass">パスワード</label>
+          <input type="password" id="authPass" class="modal-input" placeholder="パスワード" autocomplete="current-password">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-primary" id="authLoginBtn">ログイン</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

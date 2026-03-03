@@ -1,0 +1,55 @@
+# Cloud Build: Artifact Registry にビルド → Cloud Run にデプロイ
+# 使用例: gcloud builds submit --config=cloudbuild.yaml
+
+substitutions:
+  _SERVICE_NAME: airgo
+  _REGION: asia-northeast1
+  _REPOSITORY: airgo-repo
+
+steps:
+  # 1. Docker イメージをビルド
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'
+      - '.'
+
+  # 2. Artifact Registry にプッシュ
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'
+
+  # 3. Cloud Run にデプロイ（未認証アクセス許可）
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--project'
+      - '${PROJECT_ID}'
+      - '--quiet'
+
+  # 4. allUsers に Invoker ロールを付与（公開アクセスを確実に）
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'services'
+      - 'add-iam-policy-binding'
+      - '${_SERVICE_NAME}'
+      - '--region=${_REGION}'
+      - '--member=allUsers'
+      - '--role=roles/run.invoker'
+      - '--project=${PROJECT_ID}'
+      - '--quiet'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'

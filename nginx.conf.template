@@ -1,0 +1,18 @@
+server {
+    listen ${PORT};
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~* \.(js|css)$ {
+        add_header Cache-Control 'public, max-age=86400';
+    }
+
+    location ~* \.json$ {
+        add_header Content-Type application/json;
+        add_header Cache-Control 'public, max-age=300';
+    }
+}
