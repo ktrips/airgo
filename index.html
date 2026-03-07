@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Airgo — 写真と地図の旅</title>
+  <title>AirGo — 写真と地図の旅</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,10 +13,7 @@
 <body>
   <div class="app">
     <header class="header">
-      <button type="button" class="hamburger-btn" id="hamburgerBtn" aria-label="メニュー">
-        <span></span><span></span><span></span>
-      </button>
-      <h1 class="header-title header-title-link" id="headerTitle" title="ホームに戻る">Airgo</h1>
+      <h1 class="header-title header-title-link" id="headerTitle" title="ホームに戻る">AirGo</h1>
       <div class="header-trip-area">
         <div class="header-controls-row" id="headerControlsRow">
           <span class="trip-name-nav" id="tripNameNav" style="display:none">
@@ -37,9 +34,12 @@
           <div class="trip-info-meta" id="tripInfoMeta"></div>
         </div>
       </div>
+      <button type="button" class="hamburger-btn" id="hamburgerBtn" aria-label="メニュー">
+        <span></span><span></span><span></span>
+      </button>
     </header>
 
-    <!-- メニューパネル（左からスライド） -->
+    <!-- メニューパネル（右からスライド） -->
     <div class="menu-overlay" id="menuOverlay"></div>
     <aside class="menu-panel" id="menuPanel">
       <div class="menu-header">
@@ -47,7 +47,7 @@
         <button type="button" class="menu-close" id="menuClose" aria-label="閉じる">&times;</button>
       </div>
       <div class="menu-body">
-        <p class="menu-app-desc">Airgo — 地図と写真でエア旅行した気分になるアプリ</p>
+        <p class="menu-app-desc">AirGo — 地図と写真でエア旅行した気分になるアプリ</p>
         <section class="menu-section menu-auth-section">
           <button type="button" class="btn btn-primary menu-full" id="authBtn">ログイン</button>
         </section>
@@ -95,6 +95,9 @@
             <button type="button" class="btn btn-secondary login-required" id="loadTripBtn">読み込み</button>
             <button type="button" class="btn btn-secondary btn-danger editor-only" id="deleteTripBtn" disabled>削除</button>
           </div>
+          <div class="menu-row editor-only">
+            <button type="button" class="btn btn-secondary menu-full" id="openPublicTripConfigBtn">📋 公開トリップの表示設定</button>
+          </div>
         </section>
         <section class="menu-section editor-only" id="uploadSection">
           <h3>写真・GPX</h3>
@@ -110,16 +113,104 @@
             <span>GPXファイル</span>
           </div>
         </section>
+        <section class="menu-section editor-only" id="aiSettingsSection">
+          <h3>設定</h3>
+          <div class="menu-field">
+            <label for="aiProviderSelect">AI API:</label>
+            <select id="aiProviderSelect" class="menu-select">
+              <option value="openai">OpenAI (GPT)</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+          </div>
+          <div class="menu-field">
+            <label for="aiApiKeyInput">API Key:</label>
+            <input type="password" id="aiApiKeyInput" class="menu-input" placeholder="sk-... または API Key を入力" autocomplete="off">
+          </div>
+          <div class="menu-row">
+            <button type="button" class="btn btn-secondary btn-sm" id="aiApiKeySaveBtn">保存</button>
+          </div>
+        </section>
         <section class="menu-section">
-          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="公開トリップを Airgo フォルダの public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
+          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="公開トリップを AirGo フォルダの public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
           </div>
         </section>
         <p class="menu-hint editor-only-hint" id="editorOnlyHint" style="display:none">写真の閲覧・自動再生は可能です。アップロードするにはログインしてください</p>
+        <section class="menu-section">
+          <button type="button" class="btn btn-secondary menu-full" id="helpBtn">❓ ヘルプ（使い方・設定）</button>
+        </section>
       </div>
     </aside>
+
+    <!-- ヘルプモーダル -->
+    <div class="modal-overlay" id="helpModal">
+      <div class="modal help-modal">
+        <div class="modal-header">
+          <h2>AirGo ヘルプ</h2>
+          <button type="button" class="modal-close" id="helpModalClose" aria-label="閉じる">&times;</button>
+        </div>
+        <div class="modal-body help-modal-body">
+          <section class="help-section">
+            <h3>使い方</h3>
+            <h4>閲覧（ログイン不要）</h4>
+            <ul>
+              <li><strong>公開トリップ</strong>: 右側パネルからトリップを選択して閲覧</li>
+              <li><strong>写真</strong>: サムネイルクリックで拡大、地図マーカー表示</li>
+              <li><strong>操作</strong>: 「▶ 再生」「前へ」「次へ」でスライドショー</li>
+              <li><strong>間隔</strong>: 1秒/3秒/5秒で切り替え可能</li>
+            </ul>
+            <h4>編集（ログイン必要）</h4>
+            <ul>
+              <li><strong>ログイン</strong>: メニュー（≡）→「ログイン」で編集モードを有効化</li>
+              <li><strong>写真アップロード</strong>: メニュー内のアップロードゾーンにドラッグ＆ドロップ（GPS付き写真を推奨）</li>
+              <li><strong>GPX読み込み</strong>: ルートファイルをアップロードで地図に重ね表示</li>
+              <li><strong>トリップ保存</strong>: トリップ名・説明・URLを入力し「保存」</li>
+              <li><strong>公開設定</strong>: 「公開する」にチェックでログインなし閲覧可能に</li>
+              <li><strong>写真の詳細</strong>: 再生中に✎ボタンでランドマーク番号・説明・URLを編集</li>
+            </ul>
+            <h4>公開トリップのデプロイ</h4>
+            <ul>
+              <li>トリップを「公開する」で保存</li>
+              <li>「📤 公開トリップをエクスポート」で public-trips.json をダウンロード</li>
+              <li>airgo フォルダに配置して Cloud Run にデプロイ</li>
+            </ul>
+          </section>
+          <section class="help-section">
+            <h3>設定（ログイン時）</h3>
+            <ul>
+              <li><strong>AI API</strong>: OpenAI または Google Gemini を選択</li>
+              <li><strong>API Key</strong>: 選択したサービスのAPI Keyを入力して保存（ブラウザ内に保存）</li>
+            </ul>
+          </section>
+          <p class="help-note">※ GPS情報が必要です。スマートフォンで「位置情報をオン」にして撮影した写真をご利用ください。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 公開トリップ表示設定モーダル -->
+    <div class="modal-overlay" id="publicTripConfigModal">
+      <div class="modal public-trip-config-modal">
+        <div class="modal-header">
+          <h2>公開トリップの表示設定</h2>
+          <button type="button" class="modal-close" id="publicTripConfigClose" aria-label="閉じる">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="public-trip-config-hint">セクションでトリップをグループ化し、表示順を変更できます。右側パネルの↑↓ボタンでも並べ替え可能です。</p>
+          <div class="public-trip-config-visibility" id="publicTripConfigVisibility">
+            <h3 class="public-trip-config-subtitle">トリップの表示/非表示</h3>
+            <p class="public-trip-config-visibility-hint">チェックを外すと右側の公開トリップ一覧に表示されません。</p>
+            <div class="public-trip-config-visibility-list" id="publicTripConfigVisibilityList"></div>
+          </div>
+          <div class="public-trip-config-sections" id="publicTripConfigSections"></div>
+          <button type="button" class="btn btn-secondary" id="publicTripConfigAddSection">+ セクションを追加</button>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" id="publicTripConfigSave">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 写真の説明・URL編集モーダル -->
     <div class="modal-overlay" id="photoEditModal">
@@ -154,6 +245,7 @@
     </div>
 
     <div class="main" id="mainArea">
+      <button type="button" class="play-mode-stop-btn" id="playModeStopBtn" aria-label="停止" title="再生を停止">■ 停止</button>
       <div class="map-container">
         <div id="map"></div>
         <div class="play-photo-overlay" id="playPhotoOverlay">
@@ -161,6 +253,7 @@
             <button type="button" class="play-overlay-edit editor-only" id="playOverlayEdit" aria-label="詳細設定" title="詳細設定（ランドマーク・説明・URL）">✎</button>
             <button type="button" class="play-overlay-close" id="playOverlayClose" aria-label="閉じる">&times;</button>
           </div>
+          <button type="button" class="play-overlay-stop-btn" id="playOverlayStopBtn" aria-label="停止" title="再生を停止">■ 停止</button>
           <div class="play-overlay-photo">
             <div class="play-overlay-landmark-watermark" id="playOverlayLandmark"></div>
             <img src="" alt="">
@@ -173,6 +266,13 @@
         </div>
       </div>
       <aside class="public-trips-panel" id="publicTripsPanel">
+        <div class="panel-header panel-header-desktop" id="panelHeaderDesktop">
+          <h1 class="panel-header-title panel-header-title-link" id="panelHeaderTitle" title="ホームに戻る">AirGo</h1>
+          <button type="button" class="hamburger-btn" id="panelHamburgerBtn" aria-label="メニュー">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+        <div class="trip-panel-drag-handle" id="tripPanelDragHandle" title="タップまたはピンチで展開" aria-label="パネルを展開"></div>
         <div class="trip-panel-trip-list" id="tripPanelTripList">
           <h3 class="public-trips-title">公開トリップ一覧</h3>
           <div class="public-trips-list" id="publicTripsList"></div>
@@ -192,6 +292,54 @@
     </div>
 
     <div class="status" id="status"></div>
+  </div>
+
+  <!-- トリップ一覧パネル（右からスライド・ログイン時） -->
+  <div class="trip-list-overlay" id="tripListOverlay"></div>
+  <aside class="trip-list-panel" id="tripListPanel">
+    <div class="trip-list-header">
+      <h2>トリップ一覧</h2>
+      <button type="button" class="trip-list-close" id="tripListClose" aria-label="閉じる">&times;</button>
+    </div>
+    <div class="trip-list-body" id="tripListBody"></div>
+  </aside>
+
+  <!-- スタンプラリー写真アップロードモーダル -->
+  <div class="modal-overlay" id="stampUploadModal">
+    <div class="modal stamp-upload-modal">
+      <div class="modal-header">
+        <h2>スタンプに写真をアップロード</h2>
+        <button type="button" class="modal-close" id="stampUploadClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="stamp-upload-hint" id="stampUploadHint">スタンプ「〇〇」の写真を選んでください</p>
+        <div class="stamp-upload-zone" id="stampUploadZone">
+          <input type="file" id="stampPhotoInput" accept="image/*,.jpg,.jpeg,.JPG,.JPEG,.png,.PNG" hidden>
+          <span class="stamp-upload-icon">📷</span>
+          <span>写真を選択</span>
+        </div>
+        <div class="stamp-upload-preview" id="stampUploadPreview"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- URL表示ポップアップ -->
+  <div class="modal-overlay" id="urlPopupModal">
+    <div class="modal url-popup-modal">
+      <div class="modal-header">
+        <h2>リンクURL</h2>
+        <button type="button" class="modal-close" id="urlPopupClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="url-popup-content">
+          <input type="text" id="urlPopupInput" class="modal-input url-popup-input" readonly>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" id="urlPopupOpen">別ウィンドウで開く</button>
+            <button type="button" class="btn btn-secondary" id="urlPopupCopy">コピー</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ログインモーダル -->

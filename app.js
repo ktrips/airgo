@@ -1,9 +1,14 @@
 /* === Airgo — 写真と地図の旅 === */
 
 const DB_NAME = 'airgo';
+const DB_VERSION = 3;
 const AUTH_STORAGE_KEY = 'airgo_editor';
 const AUTH_USER_DEFAULT = 'usr2';
 const AUTH_PASS_DEFAULT = 'pswd';
+const AI_PROVIDER_STORAGE_KEY = 'airgo_ai_provider';
+const AI_API_KEY_STORAGE_KEY = 'airgo_ai_api_key';
+const PUBLIC_TRIP_CONFIG_KEY = 'airgo_public_trip_config';
+const STAMP_PHOTOS_KEY = 'airgo_stamp_photos';
 
 function isEditor() {
   return sessionStorage.getItem(AUTH_STORAGE_KEY) === '1';
@@ -16,6 +21,32 @@ function setEditor(ok) {
 
 function checkAuth(user, pass) {
   return (user || '').trim() === AUTH_USER_DEFAULT && (pass || '') === AUTH_PASS_DEFAULT;
+}
+
+function getAiApiProvider() {
+  return localStorage.getItem(AI_PROVIDER_STORAGE_KEY) || 'openai';
+}
+
+function setAiApiProvider(v) {
+  localStorage.setItem(AI_PROVIDER_STORAGE_KEY, v || 'openai');
+}
+
+function getAiApiKey() {
+  return localStorage.getItem(AI_API_KEY_STORAGE_KEY) || '';
+}
+
+function setAiApiKey(v) {
+  if (v) localStorage.setItem(AI_API_KEY_STORAGE_KEY, v);
+  else localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+}
+
+function updateAiSettingsUI() {
+  const providerSelect = document.getElementById('aiProviderSelect');
+  const apiKeyInput = document.getElementById('aiApiKeyInput');
+  if (!providerSelect || !apiKeyInput) return;
+  providerSelect.value = getAiApiProvider();
+  apiKeyInput.value = getAiApiKey();
+  apiKeyInput.placeholder = providerSelect.value === 'gemini' ? 'API Key を入力' : 'sk-... を入力';
 }
 
 function updateEditorUI() {
@@ -42,7 +73,6 @@ function updateEditorUI() {
   updateSaveButtonState();
 }
 
-const DB_VERSION = 1;
 const STORE_NAME = 'trips';
 
 let map = null;
@@ -62,6 +92,7 @@ let isNewTrip = false; // 新規ボタンで開始した時のみ true
 let gpxData = null;
 let gpxTrackPoints = []; // { lat, lon, time, ele, speed, temp, hr } - 各trkptの詳細データ
 let publicTrips = []; // デプロイ時に含まれる公開トリップ（public-trips.json）
+let _currentViewingTripId = null; // スタンプ保存用（loadTrip/loadTripAndShowPhotoで設定）
 
 const DEFAULT_CENTER = [35.6812, 139.7671]; // 東京
 const DEFAULT_ZOOM = 5;
@@ -84,7 +115,13 @@ function createStyledRouteLayer(route) {
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => {
+      const err = req.error;
+      if (err && err.name === 'VersionError') {
+        setStatus('IndexedDB のバージョンが古いです。ページを強制再読み込み（Ctrl+Shift+R / Cmd+Shift+R）するか、開発者ツールで airgo データベースを削除してから再読み込みしてください。', true);
+      }
+      reject(err);
+    };
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
@@ -241,7 +278,7 @@ async function reverseGeocode(lat, lng) {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
-      { headers: { 'User-Agent': 'Airgo/1.0' } }
+      { headers: { 'User-Agent': 'AirGo/1.0' } }
     );
     const data = await res.json();
     const addr = data.address || {};
@@ -506,7 +543,7 @@ function buildPhotoPopupHtml(photo, index) {
     ? `<div class="popup-desc">${escapeHtml(desc)}</div>`
     : '';
   const urlHtml = hasUrl
-    ? `<div class="popup-url"><a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener">🔗 リンク</a></div>`
+    ? `<div class="popup-url"><button type="button" class="popup-url-btn" data-url="${escapeHtml(photo.photoUrl)}">🔗 リンク</button></div>`
     : '';
   const imgHtml = photo.url
     ? `<div class="popup-photo-img-wrap">${landmarkHtml}<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}" class="popup-photo-img"></div>`
@@ -617,7 +654,7 @@ function showPhoto(index, options = {}) {
       }
       if (overlayUrl) {
         if (photo.photoUrl) {
-          overlayUrl.innerHTML = `<a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener">🔗 リンク</a>`;
+          overlayUrl.innerHTML = `<button type="button" class="popup-url-btn" data-url="${escapeHtml(photo.photoUrl)}">🔗 リンク</button>`;
           overlayUrl.style.display = 'block';
         } else {
           overlayUrl.innerHTML = '';
@@ -790,6 +827,7 @@ function startPlay() {
   map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
 
   document.getElementById('mainArea').classList.add('play-mode');
+  document.getElementById('playPhotoOverlay').classList.add('play-mode');
   document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
 
   let idx = 1;
@@ -1170,6 +1208,7 @@ async function autoSaveTrip() {
   };
   try {
     await saveTripToDB(trip);
+    photos.forEach((p, i) => { p._dbIndex = i; });
     await refreshTripList();
     await renderPublicTripsPanel();
     await renderTripListPanel();
@@ -1261,6 +1300,7 @@ async function saveTrip() {
     setStatus(err.message || '保存に失敗しました', true);
     return false;
   }
+  photos.forEach((p, i) => { p._dbIndex = i; });
   currentTripId = id;
   isNewTrip = false;
   document.getElementById('tripNameInput').value = name;
@@ -1300,6 +1340,7 @@ async function loadTrip() {
   else currentTripId = id;
   isNewTrip = false;
   _showTripListInPanel = false;
+  _currentViewingTripId = id;
 
   photos.forEach(p => {
     if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
@@ -1311,7 +1352,7 @@ async function loadTrip() {
   const publicInput = document.getElementById('tripPublicInput');
   if (publicInput) publicInput.checked = !!trip.public;
 
-  photos = (trip.photos || []).map(p => ({
+  photos = (trip.photos || []).map((p, i) => ({
     name: p.name,
     lat: p.lat,
     lng: p.lng,
@@ -1323,6 +1364,7 @@ async function loadTrip() {
     url: base64ToUrl(p.mime, p.data),
     data: p.data,
     mime: p.mime,
+    _dbIndex: i,
   }));
 
   gpxData = trip.gpxData || null;
@@ -1385,6 +1427,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   else currentTripId = tripId;
   isNewTrip = false;
   _showTripListInPanel = false;
+  _currentViewingTripId = tripId;
 
   photos.forEach(p => {
     if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
@@ -1396,7 +1439,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   const publicInput2 = document.getElementById('tripPublicInput');
   if (publicInput2) publicInput2.checked = !!trip.public;
 
-  photos = (trip.photos || []).map(p => ({
+  photos = (trip.photos || []).map((p, i) => ({
     name: p.name,
     lat: p.lat,
     lng: p.lng,
@@ -1408,6 +1451,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
     url: base64ToUrl(p.mime, p.data),
     data: p.data,
     mime: p.mime,
+    _dbIndex: i,
   }));
 
   gpxData = trip.gpxData || null;
@@ -1487,7 +1531,8 @@ function updateTripInfoDisplay(trip) {
   }
   const sep = document.getElementById('headerControlsSep');
   if (sep) sep.style.display = '';
-  const countText = hasPhotos ? `写真（${photos.length}枚）` : (name || '');
+  const displayName = name || 'トリップ';
+  const countText = hasPhotos ? `${displayName}（${photos.length}枚）` : displayName;
   if (nameEl) nameEl.textContent = countText;
   if (tripNameNav) {
     tripNameNav.style.display = '';
@@ -1628,8 +1673,217 @@ async function loadPublicTripsFromServer() {
   await renderPublicTripsPanel();
 }
 
+function getPublicTripConfig() {
+  try {
+    const raw = localStorage.getItem(PUBLIC_TRIP_CONFIG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
+function savePublicTripConfig(config) {
+  localStorage.setItem(PUBLIC_TRIP_CONFIG_KEY, JSON.stringify(config));
+}
+
+function getStampPhotos() {
+  try {
+    const raw = localStorage.getItem(STAMP_PHOTOS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) { return {}; }
+}
+function saveStampPhoto(tripId, photoIndex, { data, mime }) {
+  const all = getStampPhotos();
+  const key = `${tripId}_${photoIndex}`;
+  all[key] = { data, mime };
+  localStorage.setItem(STAMP_PHOTOS_KEY, JSON.stringify(all));
+}
+
+let _stampUploadTripId = null;
+let _stampUploadPhotoIndex = null;
+
+function openStampUploadModal(tripId, photoIndex, stampText) {
+  _stampUploadTripId = tripId;
+  _stampUploadPhotoIndex = photoIndex;
+  const hint = document.getElementById('stampUploadHint');
+  const preview = document.getElementById('stampUploadPreview');
+  const input = document.getElementById('stampPhotoInput');
+  if (hint) hint.textContent = `スタンプ「${stampText}」の写真を選んでください`;
+  if (preview) preview.innerHTML = '';
+  if (input) input.value = '';
+  document.getElementById('stampUploadModal').classList.add('open');
+}
+
+async function handleStampPhotoUpload(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const enc = await resizeImageToBase64(file, 400, 400, 0.8);
+  if (!enc || _stampUploadTripId == null || _stampUploadPhotoIndex == null) return;
+  saveStampPhoto(_stampUploadTripId, _stampUploadPhotoIndex, enc);
+  document.getElementById('stampUploadModal').classList.remove('open');
+  await renderTripMenu();
+  setStatus('スタンプに写真を登録しました');
+}
+
+let _publicTripConfigDraft = null;
+let _publicTripConfigAllTrips = [];
+
+async function openPublicTripConfigModal() {
+  const config = getPublicTripConfig();
+  _publicTripConfigDraft = config?.sections?.length
+    ? JSON.parse(JSON.stringify(config.sections))
+    : [];
+  _publicTripConfigDraft.hiddenTripIds = config?.hiddenTripIds ? [...(config.hiddenTripIds)] : [];
+  _publicTripConfigAllTrips = await getDisplayablePublicTrips(true);
+  await renderPublicTripConfigContent();
+  document.getElementById('publicTripConfigModal').classList.add('open');
+}
+
+function getAssignedTripIds() {
+  const ids = new Set();
+  (_publicTripConfigDraft || []).forEach(s => (s.tripIds || []).forEach(id => ids.add(id)));
+  return ids;
+}
+
+async function renderPublicTripConfigContent() {
+  const visibilityList = document.getElementById('publicTripConfigVisibilityList');
+  if (visibilityList) {
+    const hidden = new Set(_publicTripConfigDraft?.hiddenTripIds || []);
+    visibilityList.innerHTML = '';
+    for (const trip of _publicTripConfigAllTrips || []) {
+      const id = trip._fromServer ? 'public_' + trip.id : trip.id;
+      const isVisible = !hidden.has(id);
+      const label = document.createElement('label');
+      label.className = 'public-trip-config-visibility-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = isVisible;
+      cb.dataset.tripId = id;
+      cb.onchange = () => {
+        const ids = _publicTripConfigDraft.hiddenTripIds || [];
+        if (cb.checked) {
+          _publicTripConfigDraft.hiddenTripIds = ids.filter(x => x !== id);
+        } else {
+          _publicTripConfigDraft.hiddenTripIds = [...ids, id];
+        }
+      };
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + (trip.name || '（無題）')));
+      visibilityList.appendChild(label);
+    }
+  }
+
+  const container = document.getElementById('publicTripConfigSections');
+  if (!container) return;
+  container.innerHTML = '';
+  const sections = (_publicTripConfigDraft || []).filter(s => s && typeof s === 'object' && 'tripIds' in s);
+  const assigned = getAssignedTripIds();
+
+  for (let idx = 0; idx < sections.length; idx++) {
+    const sec = sections[idx];
+    const tripIds = sec.tripIds || [];
+    const unassignedTrips = _publicTripConfigAllTrips.filter(t => {
+      const id = t._fromServer ? 'public_' + t.id : t.id;
+      return !assigned.has(id);
+    });
+
+    const block = document.createElement('div');
+    block.className = 'public-trip-config-section';
+    const tripChips = tripIds.map(tid => {
+      const t = _publicTripConfigAllTrips.find(tr => (tr._fromServer ? 'public_' + tr.id : tr.id) === tid);
+      return t ? { id: tid, name: t.name } : null;
+    }).filter(Boolean);
+
+    block.innerHTML = `
+      <div class="public-trip-config-section-header">
+        <span class="public-trip-config-section-title">セクション ${idx + 1}</span>
+        <div class="public-trip-config-section-actions">
+          <button type="button" class="public-trip-config-order-btn" data-dir="up" data-idx="${idx}" ${idx === 0 ? 'disabled' : ''} aria-label="上へ">↑</button>
+          <button type="button" class="public-trip-config-order-btn" data-dir="down" data-idx="${idx}" ${idx === sections.length - 1 ? 'disabled' : ''} aria-label="下へ">↓</button>
+          <button type="button" class="public-trip-config-remove-btn" data-idx="${idx}" aria-label="削除">×</button>
+        </div>
+      </div>
+      <div class="public-trip-config-section-fields">
+        <div class="modal-field">
+          <label>セクション名</label>
+          <input type="text" class="modal-input public-trip-config-name" data-idx="${idx}" placeholder="例: Day1" value="${escapeHtml(sec.name || '')}">
+        </div>
+        <div class="modal-field">
+          <label>URL（任意）</label>
+          <input type="url" class="modal-input public-trip-config-url" data-idx="${idx}" placeholder="https://..." value="${escapeHtml(sec.url || '')}">
+        </div>
+        <div class="modal-field">
+          <label>トリップ</label>
+          <div class="public-trip-config-trip-chips" data-idx="${idx}">
+            ${tripChips.map(tc => `<span class="public-trip-config-chip"><span>${escapeHtml(tc.name)}</span><button type="button" class="public-trip-config-chip-remove" data-idx="${idx}" data-tid="${escapeHtml(tc.id)}" aria-label="削除">×</button></span>`).join('')}
+          </div>
+          <select class="modal-input public-trip-config-add-select" data-idx="${idx}">
+            <option value="">— トリップを追加 —</option>
+            ${unassignedTrips.map(t => {
+              const id = t._fromServer ? 'public_' + t.id : t.id;
+              return `<option value="${escapeHtml(id)}">${escapeHtml(t.name)}</option>`;
+            }).join('')}
+          </select>
+        </div>
+      </div>
+    `;
+
+    block.querySelector('.public-trip-config-order-btn[data-dir="up"]').onclick = () => movePublicTripConfigSection(idx, -1);
+    block.querySelector('.public-trip-config-order-btn[data-dir="down"]').onclick = () => movePublicTripConfigSection(idx, 1);
+    block.querySelector('.public-trip-config-remove-btn').onclick = () => removePublicTripConfigSection(idx);
+    block.querySelector('.public-trip-config-name').oninput = e => { _publicTripConfigDraft[idx].name = e.target.value; };
+    block.querySelector('.public-trip-config-url').oninput = e => { _publicTripConfigDraft[idx].url = e.target.value; };
+    block.querySelector('.public-trip-config-add-select').onchange = async e => {
+      const id = e.target.value;
+      if (!id) return;
+      _publicTripConfigDraft[idx].tripIds = _publicTripConfigDraft[idx].tripIds || [];
+      _publicTripConfigDraft[idx].tripIds.push(id);
+      e.target.value = '';
+      await renderPublicTripConfigContent();
+    };
+    block.querySelectorAll('.public-trip-config-chip-remove').forEach(btn => {
+      btn.onclick = async () => {
+        const tid = btn.dataset.tid;
+        _publicTripConfigDraft[idx].tripIds = (_publicTripConfigDraft[idx].tripIds || []).filter(x => x !== tid);
+        await renderPublicTripConfigContent();
+      };
+    });
+    container.appendChild(block);
+  }
+}
+
+function addPublicTripConfigSection() {
+  _publicTripConfigDraft = _publicTripConfigDraft || [];
+  _publicTripConfigDraft.push({ id: 'sec_' + Date.now(), name: '', url: '', tripIds: [] });
+  renderPublicTripConfigContent();
+}
+
+function movePublicTripConfigSection(idx, delta) {
+  const next = idx + delta;
+  if (next < 0 || next >= _publicTripConfigDraft.length) return;
+  [_publicTripConfigDraft[idx], _publicTripConfigDraft[next]] = [_publicTripConfigDraft[next], _publicTripConfigDraft[idx]];
+  renderPublicTripConfigContent();
+}
+
+function removePublicTripConfigSection(idx) {
+  _publicTripConfigDraft.splice(idx, 1);
+  renderPublicTripConfigContent();
+}
+
+async function savePublicTripConfigFromModal() {
+  const sections = (_publicTripConfigDraft || []).map(s => ({
+    id: s.id || 'sec_' + Date.now(),
+    name: (s.name || '').trim(),
+    url: (s.url || '').trim(),
+    tripIds: s.tripIds || []
+  }));
+  const hiddenTripIds = Array.isArray(_publicTripConfigDraft?.hiddenTripIds) ? _publicTripConfigDraft.hiddenTripIds : [];
+  const config = getPublicTripConfig() || {};
+  savePublicTripConfig({ ...config, sections, hiddenTripIds });
+  document.getElementById('publicTripConfigModal').classList.remove('open');
+  await renderPublicTripsPanel();
+  setStatus('公開トリップの表示設定を保存しました');
+}
+
 /** サーバー公開 + IndexedDBの公開トリップを結合して返す（ローカル保存を優先＝変更が即反映） */
-async function getDisplayablePublicTrips() {
+async function getDisplayablePublicTrips(includeHidden = false) {
   const serverTrips = publicTrips.map(t => ({ ...t, _fromServer: true }));
   let dbTrips = [];
   try {
@@ -1640,9 +1894,71 @@ async function getDisplayablePublicTrips() {
   const serverIds = new Set(serverTrips.map(t => t.id));
   const localOnly = localPublic.filter(t => !serverIds.has(t.id));
   const merged = serverTrips.map(t => localById.has(t.id) ? localById.get(t.id) : t);
-  const result = [...merged, ...localOnly];
-  result.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  let result = [...merged, ...localOnly];
+
+  const config = getPublicTripConfig();
+  if (config?.sections && Array.isArray(config.sections) && config.sections.length > 0) {
+    const ordered = [];
+    const usedIds = new Set();
+    for (const sec of config.sections) {
+      const tripIds = sec.tripIds || [];
+      for (const id of tripIds) {
+        const t = result.find(r => r.id === id || ('public_' + r.id) === id);
+        if (t && !usedIds.has(t.id)) {
+          ordered.push(t);
+          usedIds.add(t.id);
+        }
+      }
+    }
+    const rest = result.filter(t => !usedIds.has(t.id));
+    result = [...ordered, ...rest];
+  } else if (config?.tripOrder && Array.isArray(config.tripOrder)) {
+    const orderMap = new Map(config.tripOrder.map((id, i) => [id.replace(/^public_/, ''), i]));
+    result.sort((a, b) => {
+      const ai = orderMap.get(a.id);
+      const bi = orderMap.get(b.id);
+      if (ai != null && bi != null) return ai - bi;
+      if (ai != null) return -1;
+      if (bi != null) return 1;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+  } else {
+    result.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+  if (!includeHidden && config?.hiddenTripIds && Array.isArray(config.hiddenTripIds)) {
+    const hidden = new Set(config.hiddenTripIds);
+    config.hiddenTripIds.forEach(id => {
+      if (typeof id === 'string' && id.startsWith('public_')) hidden.add(id.slice(7));
+      else if (typeof id === 'string') hidden.add('public_' + id);
+    });
+    result = result.filter(t => !hidden.has(t.id) && !hidden.has(t._fromServer ? 'public_' + t.id : t.id));
+  }
   return result;
+}
+
+/** セクション情報付きで公開トリップを返す（右パネル描画用） */
+async function getDisplayablePublicTripsGrouped() {
+  const flat = await getDisplayablePublicTrips();
+  const config = getPublicTripConfig();
+  if (!config?.sections?.length) {
+    return [{ sectionName: null, sectionUrl: null, trips: flat }];
+  }
+  const idToTrip = new Map();
+  for (const t of flat) {
+    const key = t._fromServer ? 'public_' + t.id : t.id;
+    idToTrip.set(key, t);
+    if (t._fromServer) idToTrip.set(t.id, t);
+  }
+  const usedIds = new Set();
+  const groups = [];
+  for (const sec of config.sections) {
+    const trips = (sec.tripIds || []).map(id => idToTrip.get(id) || idToTrip.get('public_' + id) || idToTrip.get(id.replace(/^public_/, ''))).filter(Boolean);
+    trips.forEach(t => usedIds.add(t._fromServer ? 'public_' + t.id : t.id));
+    if (trips.length > 0) groups.push({ sectionName: sec.name || null, sectionUrl: sec.url || null, trips });
+  }
+  const rest = flat.filter(t => !usedIds.has(t._fromServer ? 'public_' + t.id : t.id));
+  if (rest.length) groups.push({ sectionName: 'その他', sectionUrl: null, trips: rest });
+  return groups;
 }
 
 let _publicTripUrls = [];
@@ -1660,10 +1976,12 @@ async function renderPublicTripsPanel() {
   if (photos.length > 0 && !_showTripListInPanel) {
     if (tripListWrap) tripListWrap.style.display = 'none';
     if (tripMenuWrap) tripMenuWrap.style.display = 'flex';
+    if (panel) panel.classList.add('trip-menu-expanded');
     await renderTripMenu();
     return;
   }
 
+  if (panel) panel.classList.remove('trip-menu-expanded');
   if (_tripMenuMap) {
     _tripMenuMap.remove();
     _tripMenuMap = null;
@@ -1678,7 +1996,8 @@ async function renderPublicTripsPanel() {
   listEl.innerHTML = '';
   _publicTripUrls.forEach(u => { if (u?.startsWith?.('blob:')) URL.revokeObjectURL(u); });
   _publicTripUrls = [];
-  const displayTrips = await getDisplayablePublicTrips();
+  const groups = await getDisplayablePublicTripsGrouped();
+  const displayTrips = groups.flatMap(g => g.trips);
   if (displayTrips.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'public-trips-empty';
@@ -1686,7 +2005,21 @@ async function renderPublicTripsPanel() {
     listEl.appendChild(empty);
     return;
   }
-  displayTrips.forEach((trip) => {
+  let globalIdx = 0;
+  const isMobile = isMobileView();
+  for (const group of groups) {
+    if (!isMobile && group.sectionName && group.trips.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'public-trips-section-header';
+      let headerHtml = escapeHtml(group.sectionName);
+      if (group.sectionUrl) {
+        headerHtml = `<a href="${escapeHtml(group.sectionUrl)}" target="_blank" rel="noopener noreferrer" class="public-trips-section-link">${headerHtml}</a>`;
+      }
+      header.innerHTML = `<h4 class="public-trips-section-title">${headerHtml}</h4>`;
+      listEl.appendChild(header);
+    }
+    for (const trip of group.trips) {
+      const idx = globalIdx++;
     const card = document.createElement('div');
     card.className = 'public-trip-card';
     const photos = trip.photos || [];
@@ -1706,14 +2039,22 @@ async function renderPublicTripsPanel() {
       gpxParts.push(distStr + speedStr);
     }
     const gpxMeta = gpxParts.length > 0 ? gpxParts.join(' ') : '';
+    const showOrderBtns = isEditor();
+    const nameText = isMobile ? escapeHtml(trip.name) : `${escapeHtml(trip.name)}（${photos.length}枚）`;
     card.innerHTML = `
       <div class="public-trip-card-inner">
         <div class="public-trip-thumb"></div>
         <div class="public-trip-info">
-          <h4 class="public-trip-name">${escapeHtml(trip.name)}（${photos.length}枚）</h4>
+          <h4 class="public-trip-name">${nameText}</h4>
           ${desc ? `<p class="public-trip-desc">${escapeHtml(desc)}</p>` : ''}
           ${gpxMeta ? `<p class="public-trip-gpx-meta">${gpxMeta}</p>` : ''}
         </div>
+        ${showOrderBtns ? `
+        <div class="public-trip-order-btns">
+          <button type="button" class="public-trip-order-btn" data-dir="up" data-index="${idx}" aria-label="上へ">↑</button>
+          <button type="button" class="public-trip-order-btn" data-dir="down" data-index="${idx}" aria-label="下へ">↓</button>
+        </div>
+        ` : ''}
       </div>
     `;
     const thumbEl = card.querySelector('.public-trip-thumb');
@@ -1724,9 +2065,45 @@ async function renderPublicTripsPanel() {
       thumbEl.appendChild(img);
     }
     const loadId = trip._fromServer ? 'public_' + trip.id : trip.id;
-    card.onclick = () => loadTripAndShowPhoto(loadId, 0);
+    card.onclick = (e) => {
+      if (e.target.closest('.public-trip-order-btns')) return;
+      loadTripAndShowPhoto(loadId, 0);
+    };
+    if (showOrderBtns) {
+      card.querySelectorAll('.public-trip-order-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const dir = btn.dataset.dir;
+          const i = parseInt(btn.dataset.index, 10);
+          const swapIdx = dir === 'up' ? i - 1 : i + 1;
+          if (swapIdx < 0 || swapIdx >= displayTrips.length) return;
+          const ids = displayTrips.map(t => t._fromServer ? 'public_' + t.id : t.id);
+          [ids[i], ids[swapIdx]] = [ids[swapIdx], ids[i]];
+          const config = getPublicTripConfig() || {};
+          if (config?.sections?.length) {
+            const idToSec = new Map();
+            config.sections.forEach(s => (s.tripIds || []).forEach(tid => idToSec.set(tid, s.id)));
+            const newSections = config.sections.map(s => ({ ...s, tripIds: [] }));
+            const otherIds = [];
+            const secById = new Map(newSections.map(s => [s.id, s]));
+            ids.forEach(tid => {
+              const secId = idToSec.get(tid);
+              const sec = secId ? secById.get(secId) : null;
+              if (sec) sec.tripIds.push(tid);
+              else otherIds.push(tid);
+            });
+            const final = otherIds.length ? [...newSections, { id: '_other', name: 'その他', url: '', tripIds: otherIds }] : newSections;
+            savePublicTripConfig({ ...config, sections: final });
+          } else {
+            savePublicTripConfig({ ...config, tripOrder: ids });
+          }
+          await renderPublicTripsPanel();
+        };
+      });
+    }
     listEl.appendChild(card);
-  });
+    }
+  }
 }
 
 async function renderTripMenu() {
@@ -1757,7 +2134,7 @@ async function renderTripMenu() {
   }
 
   const titleEl = document.getElementById('tripMenuTitle');
-  if (titleEl) titleEl.textContent = `${name}メニュー`;
+  if (titleEl) titleEl.textContent = name;
 
   content.innerHTML = '';
   content.className = 'trip-menu-content';
@@ -1861,15 +2238,33 @@ async function renderTripMenu() {
   if (landmarks.length > 0) {
     const stampsEl = document.createElement('div');
     stampsEl.className = 'trip-menu-stamps';
-    stampsEl.innerHTML = '<div class="trip-menu-stamps-grid"></div>';
+    stampsEl.innerHTML = '<h4 class="trip-menu-stamps-title">スタンプラリー</h4><div class="trip-menu-stamps-grid"></div>';
     const grid = stampsEl.querySelector('.trip-menu-stamps-grid');
+    const tripId = _currentViewingTripId || currentTripId || '';
+    const stampPhotos = getStampPhotos();
     landmarks.forEach(({ text, photoIndex }) => {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'trip-menu-stamp-card';
-      card.textContent = text;
-      card.title = `クリックで地図上に表示`;
-      card.onclick = () => showPhotoWithPopup(photoIndex);
+      const key = `${tripId}_${photoIndex}`;
+      const stampPhoto = stampPhotos[key];
+      if (stampPhoto) {
+        card.classList.add('trip-menu-stamp-card-filled');
+        const img = document.createElement('img');
+        img.src = base64ToUrl(stampPhoto.mime, stampPhoto.data);
+        img.alt = text;
+        if (img.src.startsWith('blob:')) _tripMenuUrls.push(img.src);
+        const check = document.createElement('span');
+        check.className = 'trip-menu-stamp-check';
+        check.textContent = '✓';
+        card.appendChild(img);
+        card.appendChild(check);
+        card.title = 'クリックで写真を変更';
+      } else {
+        card.textContent = text;
+        card.title = 'クリックで写真をアップロード';
+      }
+      card.onclick = () => openStampUploadModal(tripId, photoIndex, text);
       grid.appendChild(card);
     });
     content.appendChild(stampsEl);
@@ -1956,7 +2351,7 @@ async function exportPublicTrips() {
 
   if ('showDirectoryPicker' in window) {
     try {
-      setStatus('Airgo フォルダを選択してください…');
+      setStatus('AirGo フォルダを選択してください…');
       const dirHandle = await window.showDirectoryPicker({
         mode: 'readwrite',
         startIn: 'desktop',
@@ -1965,7 +2360,7 @@ async function exportPublicTrips() {
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
-      setStatus(`公開トリップ ${publicOnly.length}件を public-trips.json に保存しました（Airgo フォルダ、上書き済み）。`);
+      setStatus(`公開トリップ ${publicOnly.length}件を public-trips.json に保存しました（AirGo フォルダ、上書き済み）。`);
     } catch (err) {
       if (err.name === 'AbortError') return;
       setStatus(err.message || '保存に失敗しました', true);
@@ -1997,7 +2392,7 @@ function fallbackDownloadPublicTrips(blob, count) {
   a.download = 'public-trips.json';
   a.click();
   URL.revokeObjectURL(a.href);
-  setStatus(`公開トリップ ${count}件をダウンロードしました。Airgo フォルダに public-trips.json として保存（上書き可）してください。`);
+  setStatus(`公開トリップ ${count}件をダウンロードしました。AirGo フォルダに public-trips.json として保存（上書き可）してください。`);
 }
 
 async function importTripsFromFile() {
@@ -2072,15 +2467,25 @@ async function refreshTripList() {
 
 async function deleteTrip() {
   if (!isEditor()) return;
-  const id = document.getElementById('tripSelect').value;
+  let id = document.getElementById('tripSelect').value;
   if (!id) return;
+  if (id.startsWith('public_')) {
+    setStatus('公開トリップは削除できません（public-trips.json 由来）', true);
+    return;
+  }
   if (!confirm('このトリップを削除しますか？')) return;
 
-  await deleteTripFromDB(id);
-  if (currentTripId === id) clearCurrentTrip();
-  await refreshTripList();
-  document.getElementById('deleteTripBtn').disabled = true;
-  setStatus('トリップを削除しました');
+  try {
+    await deleteTripFromDB(id);
+    if (currentTripId === id) clearCurrentTrip();
+    document.getElementById('tripSelect').value = '';
+    await refreshTripList();
+    document.getElementById('deleteTripBtn').disabled = true;
+    setStatus('トリップを削除しました');
+  } catch (err) {
+    console.error('deleteTrip error:', err);
+    setStatus(err.message || 'トリップの削除に失敗しました', true);
+  }
 }
 
 /* --- トリップ一覧パネル --- */
@@ -2128,13 +2533,19 @@ async function renderTripListPanel() {
     if (deleteBtn) {
       deleteBtn.onclick = async (e) => {
         e.stopPropagation();
+        e.preventDefault();
         if (!confirm(`「${escapeHtml(trip.name)}」とその写真を削除しますか？`)) return;
-        await deleteTripFromDB(origTripId);
-        if (currentTripId === origTripId) clearCurrentTrip();
-        await refreshTripList();
-        await renderTripListPanel();
-        await renderPublicTripsPanel();
-        setStatus('トリップを削除しました');
+        try {
+          await deleteTripFromDB(origTripId);
+          if (currentTripId === origTripId) clearCurrentTrip();
+          await refreshTripList();
+          await renderTripListPanel();
+          await renderPublicTripsPanel();
+          setStatus('トリップを削除しました');
+        } catch (err) {
+          console.error('deleteTripFromDB error:', err);
+          setStatus(err.message || 'トリップの削除に失敗しました', true);
+        }
       };
     }
     header.onclick = () => {
@@ -2154,11 +2565,13 @@ async function renderTripListPanel() {
       const div = document.createElement('div');
       div.className = 'trip-list-photo';
       div.title = p.name;
-      const img = document.createElement('img');
-      img.src = base64ToUrl(p.mime, p.data);
-      _tripListUrls.push(img.src);
-      img.alt = p.name;
-      div.appendChild(img);
+      if (p.data && p.mime) {
+        const img = document.createElement('img');
+        img.src = base64ToUrl(p.mime, p.data);
+        _tripListUrls.push(img.src);
+        img.alt = p.name;
+        div.appendChild(img);
+      }
       div.onclick = (e) => {
         e.stopPropagation();
         if (isEditor() && !trip._isPublic) {
@@ -2198,6 +2611,7 @@ function goToHome() {
 }
 
 function openMenu() {
+  if (isEditor()) updateAiSettingsUI();
   document.getElementById('menuOverlay').classList.add('visible');
   document.getElementById('menuPanel').classList.add('open');
 }
@@ -2207,12 +2621,20 @@ function closeMenu() {
   document.getElementById('menuPanel').classList.remove('open');
 }
 
+function openTripListPanel() {
+  if (!isEditor()) return;
+  const overlay = document.getElementById('tripListOverlay');
+  const panel = document.getElementById('tripListPanel');
+  if (overlay) overlay.classList.add('visible');
+  if (panel) panel.classList.add('open');
+  renderTripListPanel();
+}
+
 function closeTripListPanel() {
-  const overlay = document.querySelector('.trip-list-overlay');
-  const panel = document.querySelector('.trip-list-panel');
+  const overlay = document.getElementById('tripListOverlay');
+  const panel = document.getElementById('tripListPanel');
   if (overlay) overlay.classList.remove('visible');
   if (panel) panel.classList.remove('open');
-  closeMenu();
 }
 
 /* --- 写真編集モーダル --- */
@@ -2258,6 +2680,24 @@ function closePhotoEditModal() {
   _photoEditIndex = null;
 }
 
+function showUrlPopup(url) {
+  const input = document.getElementById('urlPopupInput');
+  const modal = document.getElementById('urlPopupModal');
+  if (input && modal) {
+    input.value = url || '';
+    modal.classList.add('open');
+  }
+}
+
+function openUrlInPopup(url) {
+  if (!url) return;
+  const w = Math.min(900, screen.width - 40);
+  const h = Math.min(700, screen.height - 80);
+  const left = Math.round((screen.width - w) / 2);
+  const top = Math.round((screen.height - h) / 2);
+  window.open(url, '_blank', `width=${w},height=${h},left=${left},top=${top},scrollbars=yes,resizable=yes`);
+}
+
 async function savePhotoEdit() {
   const landmarkNo = toLandmarkValue(document.getElementById('photoEditLandmarkNo').value);
   const landmarkName = toLandmarkValue(document.getElementById('photoEditLandmarkName').value);
@@ -2286,10 +2726,16 @@ async function savePhotoEdit() {
     photos[_photoEditIndex].photoUrl = url;
   }
 
-  // DB に直接保存（savePhotoMetadataToDB が最も確実）
   let saved = false;
   try {
-    saved = await savePhotoMetadataToDB(_photoEditTripId, _photoEditIndex, metadata);
+    if (currentTripId === _photoEditTripId) {
+      // 表示中のトリップ: メモリ状態をそのまま saveTrip で保存（最も確実）
+      saved = await saveTrip();
+    } else {
+      // トリップ一覧から編集: DB に直接保存
+      const dbIndex = (photos[_photoEditIndex]?._dbIndex != null) ? photos[_photoEditIndex]._dbIndex : _photoEditIndex;
+      saved = await savePhotoMetadataToDB(_photoEditTripId, dbIndex, metadata);
+    }
   } catch (err) {
     console.error('savePhotoEdit error:', err);
   }
@@ -2297,12 +2743,12 @@ async function savePhotoEdit() {
   if (saved) {
     addPhotoMarkers();
     renderAllPhotosStrip();
-    await refreshTripList();
-    await renderPublicTripsPanel();
-    // 写真オーバーレイを表示（ランドマークを上部に目立つように表示）
     if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
       showPhoto(_photoEditIndex);
     }
+    await refreshTripList();
+    await renderPublicTripsPanel();
+    await renderTripListPanel();
     setStatus('詳細設定を保存しました');
     setTimeout(() => setStatus(''), 2000);
   } else {
@@ -2439,6 +2885,29 @@ async function setup() {
     if (e.target.id === 'authModal') document.getElementById('authModal').classList.remove('open');
   };
 
+  document.getElementById('helpBtn').onclick = () => {
+    document.getElementById('helpModal').classList.add('open');
+  };
+  document.getElementById('helpModalClose').onclick = () => {
+    document.getElementById('helpModal').classList.remove('open');
+  };
+  document.getElementById('helpModal').onclick = e => {
+    if (e.target.id === 'helpModal') document.getElementById('helpModal').classList.remove('open');
+  };
+
+  document.getElementById('openPublicTripConfigBtn').onclick = () => {
+    closeMenu();
+    openPublicTripConfigModal();
+  };
+  document.getElementById('publicTripConfigClose').onclick = () => {
+    document.getElementById('publicTripConfigModal').classList.remove('open');
+  };
+  document.getElementById('publicTripConfigModal').onclick = e => {
+    if (e.target.id === 'publicTripConfigModal') document.getElementById('publicTripConfigModal').classList.remove('open');
+  };
+  document.getElementById('publicTripConfigAddSection').onclick = addPublicTripConfigSection;
+  document.getElementById('publicTripConfigSave').onclick = savePublicTripConfigFromModal;
+
   const uploadZone = document.getElementById('uploadZone');
   const photoInput = document.getElementById('photoInput');
   const gpxZone = document.getElementById('gpxZone');
@@ -2491,6 +2960,10 @@ async function setup() {
 
   document.getElementById('headerTitle').onclick = goToHome;
   document.getElementById('hamburgerBtn').onclick = openMenu;
+  const panelHeaderTitle = document.getElementById('panelHeaderTitle');
+  const panelHamburgerBtn = document.getElementById('panelHamburgerBtn');
+  if (panelHeaderTitle) panelHeaderTitle.onclick = goToHome;
+  if (panelHamburgerBtn) panelHamburgerBtn.onclick = openMenu;
   document.getElementById('menuClose').onclick = closeMenu;
   document.getElementById('menuOverlay').onclick = closeMenu;
 
@@ -2514,6 +2987,23 @@ async function setup() {
   document.getElementById('exportPublicBtn').onclick = exportPublicTrips;
   document.getElementById('tripImportBtn').onclick = importTripsFromFile;
 
+  const aiProviderSelect = document.getElementById('aiProviderSelect');
+  const aiApiKeyInput = document.getElementById('aiApiKeyInput');
+  const aiApiKeySaveBtn = document.getElementById('aiApiKeySaveBtn');
+  if (aiProviderSelect) {
+    aiProviderSelect.addEventListener('change', () => {
+      setAiApiProvider(aiProviderSelect.value);
+      if (aiApiKeyInput) aiApiKeyInput.placeholder = aiProviderSelect.value === 'gemini' ? 'API Key を入力' : 'sk-... を入力';
+    });
+  }
+  if (aiApiKeySaveBtn && aiApiKeyInput) {
+    aiApiKeySaveBtn.addEventListener('click', () => {
+      const key = (aiApiKeyInput.value || '').trim();
+      setAiApiKey(key);
+      setStatus(key ? 'API Key を保存しました' : 'API Key を削除しました');
+    });
+  }
+
   document.getElementById('photoEditClose').onclick = closePhotoEditModal;
   // イベント委譲: オーバーレイでクリックを一元処理（ボタン単体のonclickが発火しない環境対策）
   document.getElementById('photoEditModal').addEventListener('click', async (e) => {
@@ -2531,6 +3021,12 @@ async function setup() {
       document.getElementById('playPhotoOverlay').classList.remove('visible', 'play-mode');
     }
   };
+  document.getElementById('playOverlayStopBtn').onclick = () => {
+    if (isPlaying) stopPlay();
+  };
+  document.getElementById('playModeStopBtn').onclick = () => {
+    if (isPlaying) stopPlay();
+  };
   document.getElementById('playOverlayEdit').onclick = (e) => {
     e.stopPropagation();
     if (isEditor() && photos.length > 0 && currentIndex >= 0) {
@@ -2544,11 +3040,43 @@ async function setup() {
     renderPublicTripsPanel();
   };
 
+  document.getElementById('tripListClose').onclick = closeTripListPanel;
+  document.getElementById('tripListOverlay').onclick = closeTripListPanel;
+
+  const tripPanelDragHandle = document.getElementById('tripPanelDragHandle');
+  const publicTripsPanel = document.getElementById('publicTripsPanel');
+  if (tripPanelDragHandle && publicTripsPanel) {
+    tripPanelDragHandle.onclick = () => {
+      publicTripsPanel.classList.toggle('trip-panel-manually-expanded');
+    };
+    let pinchStartDist = 0;
+    const handlePinch = (e) => {
+      if (e.touches.length !== 2) return;
+      const dist = Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY);
+      if (pinchStartDist === 0) pinchStartDist = dist;
+      else if (dist - pinchStartDist > 50) {
+        publicTripsPanel.classList.add('trip-panel-manually-expanded');
+        pinchStartDist = -1;
+      }
+    };
+    const resetPinch = () => { pinchStartDist = 0; };
+    document.addEventListener('touchstart', e => { if (e.touches.length === 2) pinchStartDist = 0; }, { passive: true });
+    document.addEventListener('touchmove', handlePinch, { passive: true });
+    document.addEventListener('touchend', resetPinch, { passive: true });
+    document.addEventListener('touchcancel', resetPinch, { passive: true });
+  }
+
   document.addEventListener('click', e => {
-    const link = e.target.closest('.trip-desc-link');
-    if (link && link.href) {
+    const link = e.target.closest('.trip-desc-link, .trip-meta-detail-link, .public-trips-section-link');
+    if (link && link.href && !link.href.startsWith('#')) {
       e.preventDefault();
-      window.open(link.href, '_blank', 'noopener,noreferrer');
+      openUrlInPopup(link.href);
+    }
+    const urlBtn = e.target.closest('.popup-url-btn');
+    if (urlBtn && urlBtn.dataset.url) {
+      e.preventDefault();
+      e.stopPropagation();
+      showUrlPopup(urlBtn.dataset.url);
     }
     const editBtn = e.target.closest('.popup-photo-edit');
     if (editBtn && isEditor()) {
@@ -2560,6 +3088,21 @@ async function setup() {
       }
     }
   });
+
+  document.getElementById('urlPopupClose').onclick = () => document.getElementById('urlPopupModal').classList.remove('open');
+  document.getElementById('urlPopupModal').onclick = e => {
+    if (e.target.id === 'urlPopupModal') document.getElementById('urlPopupModal').classList.remove('open');
+  };
+  document.getElementById('urlPopupOpen').onclick = () => {
+    const url = document.getElementById('urlPopupInput').value;
+    openUrlInPopup(url);
+  };
+  document.getElementById('urlPopupCopy').onclick = async () => {
+    const input = document.getElementById('urlPopupInput');
+    await navigator.clipboard.writeText(input.value || '');
+    setStatus('URLをコピーしました');
+    setTimeout(() => setStatus(''), 1500);
+  };
 
   await refreshTripList();
   updatePhotoNav();
