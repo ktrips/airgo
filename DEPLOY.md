@@ -181,12 +181,21 @@ https://airgo.ktrips.net にアクセス後：
 4. **キャッシュ**
    - ブラウザのキャッシュをクリアするか、シークレットモードで試す
 
+## GitHub Actions でのデプロイ
+
+main ブランチに push すると、GitHub Actions で自動的に airgo.ktrips.net にデプロイされます。Yonda のデプロイ構成を参考にしています。
+
+- **ワークフロー**: `.github/workflows/deploy.yml`
+- **セットアップ**: [.github/GITHUB_ACTIONS_SETUP.md](.github/GITHUB_ACTIONS_SETUP.md) を参照
+- **必要な Secrets**: `GCP_PROJECT_ID`, `GCP_SA_KEY`
+
 ## ファイル構成
 
 - `Dockerfile` - nginx で静的ファイルを配信
 - `public-trips.json` - 公開トリップのデータ（エクスポートで生成）
 - `nginx.conf.template` - nginx 設定テンプレート（PORT 環境変数対応）
 - `docker-entrypoint.sh` - 起動時に PORT を設定
-- `cloudbuild.yaml` - Cloud Build のビルド設定
-- `deploy.sh` - デプロイ用シェルスクリプト
+- `cloudbuild.yaml` - Cloud Build のビルド設定（手動デプロイ用）
+- `deploy.sh` - ローカルからのデプロイ用シェルスクリプト
+- `.github/workflows/deploy.yml` - GitHub Actions デプロイワークフロー
 - `.dockerignore` - Docker ビルド時の除外ファイル

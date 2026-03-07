@@ -34,6 +34,11 @@ function updateEditorUI() {
   if (document.getElementById('allPhotosThumbnails')?.classList.contains('visible')) {
     renderAllPhotosStrip();
   }
+  if (map && photos.length > 0) addPhotoMarkers();
+  if (photoPopup && map && photos[currentIndex] != null) {
+    photoPopup.setContent(buildPhotoPopupHtml(photos[currentIndex], currentIndex));
+  }
+  if (photos.length > 0) renderPublicTripsPanel();
   updateSaveButtonState();
 }
 
@@ -132,6 +137,21 @@ async function deleteTripFromDB(id) {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+}
+
+/** 写真のメタデータ（ランドマーク・説明・URL）をDBに直接保存。既存トリップの写真データを保持したまま更新 */
+async function savePhotoMetadataToDB(tripId, photoIndex, metadata) {
+  const trip = await loadTripFromDB(tripId);
+  if (!trip) return false;
+  if (!trip.photos || !trip.photos[photoIndex]) return false;
+  const p = trip.photos[photoIndex];
+  p.landmarkNo = metadata.landmarkNo;
+  p.landmarkName = metadata.landmarkName;
+  p.description = metadata.description;
+  p.url = metadata.url;
+  trip.updatedAt = Date.now();
+  await saveTripToDB(trip);
+  return true;
 }
 
 function initMap() {
@@ -473,6 +493,11 @@ function sortPhotosByGpxOrder() {
 
 function buildPhotoPopupHtml(photo, index) {
   const place = photo.placeName ? `📍 ${photo.placeName}` : '';
+  const hasLandmark = toLandmarkValue(photo.landmarkNo) != null || toLandmarkValue(photo.landmarkName) != null;
+  const landmarkText = hasLandmark ? [photo.landmarkNo, photo.landmarkName].filter(Boolean).join(' ') : '';
+  const landmarkHtml = hasLandmark
+    ? `<div class="popup-photo-landmark-watermark">${escapeHtml(landmarkText)}</div>`
+    : '';
   const desc = photo.description ? photo.description.trim() : '';
   const hasDesc = desc.length > 0;
   const hasUrl = photo.photoUrl && photo.photoUrl.trim().length > 0;
@@ -484,13 +509,17 @@ function buildPhotoPopupHtml(photo, index) {
     ? `<div class="popup-url"><a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener">🔗 リンク</a></div>`
     : '';
   const imgHtml = photo.url
-    ? `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}" class="popup-photo-img">`
+    ? `<div class="popup-photo-img-wrap">${landmarkHtml}<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}" class="popup-photo-img"></div>`
     : '';
   const nameHtml = showName
     ? `<span class="popup-photo-name">${escapeHtml(photo.name)}</span>`
     : '';
+  const editBtnHtml = isEditor()
+    ? `<button type="button" class="popup-photo-edit" data-photo-index="${index}" title="詳細設定（ランドマーク・説明・URL）" aria-label="編集">✎</button>`
+    : '';
   return `
     <div class="popup-photo-content">
+      ${editBtnHtml}
       ${imgHtml}
       <div class="popup-photo-info">
         ${nameHtml}
@@ -525,21 +554,20 @@ function addPhotoMarkers() {
 
   withGps.forEach((photo) => {
     const photoIndex = photos.indexOf(photo);
-    const displayNum = withGps.indexOf(photo) + 1;
+    const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
+    const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
     const icon = L.divIcon({
-      className: 'photo-marker',
-      html: `<span style="
-        display:inline-block;width:28px;height:28px;border-radius:50%;
-        background:var(--accent);color:#fff;font-size:12px;font-weight:bold;
-        line-height:28px;text-align:center;border:2px solid #fff;
-      ">${displayNum}</span>`,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain'),
+      html: hasLandmarkNo
+        ? `<span class="landmark-marker-num">${displayText}</span>`
+        : `<span class="landmark-marker-plain"></span>`,
+      iconSize: hasLandmarkNo ? [40, 40] : [24, 24],
+      iconAnchor: hasLandmarkNo ? [20, 20] : [12, 12],
     });
     const marker = L.marker([photo.lat, photo.lng], { icon })
       .addTo(map)
       .bindPopup(buildPhotoPopupHtml(photo, photoIndex), {
-        maxWidth: 420,
+        maxWidth: 280,
         className: 'photo-popup',
       })
       .on('click', () => showPhotoWithPopup(photoIndex));
@@ -559,13 +587,30 @@ function showPhoto(index, options = {}) {
   if (photo.url) {
     if (!popupOnly && playOverlay) {
       const overlayImg = playOverlay.querySelector('.play-overlay-photo img');
+      const overlayLandmark = document.getElementById('playOverlayLandmark');
       const overlayInfo = playOverlay.querySelector('.play-overlay-info');
       const overlayPlace = playOverlay.querySelector('.play-overlay-place');
       const overlayDesc = playOverlay.querySelector('.play-overlay-desc');
       const overlayUrl = playOverlay.querySelector('.play-overlay-url');
       if (overlayImg) overlayImg.src = photo.url;
+      if (overlayLandmark) {
+        const hasLandmark = toLandmarkValue(photo.landmarkNo) != null || toLandmarkValue(photo.landmarkName) != null;
+        if (hasLandmark) {
+          const text = [photo.landmarkNo, photo.landmarkName].filter(Boolean).join(' ');
+          overlayLandmark.textContent = text;
+          overlayLandmark.style.display = 'block';
+        } else {
+          overlayLandmark.textContent = '';
+          overlayLandmark.style.display = 'none';
+        }
+      }
       if (overlayInfo) overlayInfo.textContent = photo.name;
-      if (overlayPlace) overlayPlace.textContent = photo.placeName ? `📍 ${photo.placeName}` : '';
+      if (overlayPlace) {
+        const parts = [];
+        if (photo.placeName) parts.push(`📍 ${photo.placeName}`);
+        if (photo.landmarkNo || photo.landmarkName) parts.push(`🏷️ ${[photo.landmarkNo, photo.landmarkName].filter(Boolean).join(' ')}`);
+        overlayPlace.textContent = parts.join('  ');
+      }
       if (overlayDesc) {
         overlayDesc.textContent = photo.description || '';
         overlayDesc.style.display = (photo.description && photo.description.trim()) ? 'block' : 'none';
@@ -607,7 +652,7 @@ function showPhoto(index, options = {}) {
   } else if (popupOnly && map && photo.url) {
     if (photoPopup) map.removeLayer(photoPopup);
     const center = map.getCenter();
-    photoPopup = L.popup({ maxWidth: 420, className: 'photo-popup' })
+    photoPopup = L.popup({ maxWidth: 280, className: 'photo-popup' })
       .setLatLng(center)
       .setContent(buildPhotoPopupHtml(photo, index))
       .openOn(map);
@@ -658,7 +703,7 @@ function updatePhotoNav() {
   if (nextBtn) nextBtn.disabled = nextDisabled;
   if (menuPrevBtn) menuPrevBtn.disabled = prevDisabled;
   if (menuNextBtn) menuNextBtn.disabled = nextDisabled;
-  if (menuAllPhotosBtn) menuAllPhotosBtn.textContent = `全ての写真（${photos.length}枚）`;
+  if (menuAllPhotosBtn) menuAllPhotosBtn.textContent = photos.length > 0 ? `写真（${photos.length}枚）` : '写真（0枚）';
   if (mc) mc.style.display = '';
   updateTripInfoDisplay(null);
 }
@@ -666,14 +711,9 @@ function updatePhotoNav() {
 function fitMapToFullExtent() {
   if (!map) return;
   const withGps = photos.filter(p => p.lat != null && p.lng != null);
-  const routePoints = getGpxRoutePoints();
-  let bounds = null;
-  if (withGps.length > 0) bounds = L.latLngBounds(withGps.map(p => [p.lat, p.lng]));
-  if (routePoints.length >= 2) {
-    const routeBounds = L.latLngBounds(routePoints);
-    bounds = bounds ? bounds.extend(routeBounds) : routeBounds;
-  }
-  if (bounds) map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+  if (withGps.length === 0) return;
+  const bounds = L.latLngBounds(withGps.map(p => [p.lat, p.lng]));
+  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
 }
 
 function movePhoto(fromIdx, toIdx) {
@@ -819,7 +859,7 @@ function renderAllPhotosStrip() {
       const edit = document.createElement('button');
       edit.type = 'button';
       edit.className = 'all-photo-thumb-btn';
-      edit.title = '説明・URLを編集';
+      edit.title = '詳細設定（ランドマーク・説明・URL）';
       edit.textContent = '✎';
       edit.onclick = (e) => { e.stopPropagation(); openPhotoEditModal(i); };
       const del = document.createElement('button');
@@ -995,7 +1035,8 @@ async function handleFiles(files, appendMode = false) {
   renderAllPhotosStrip();
   addPhotoMarkers();
   fitMapToFullExtent();
-  openAllPhotosThumbnails();
+  document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
+  await renderPublicTripsPanel();
 
   if (withGps.length > 0) {
     const idx = photos.findIndex(p => p.lat != null);
@@ -1099,7 +1140,18 @@ async function autoSaveTrip() {
       mime = p.mime || 'image/jpeg';
     }
     if (data) {
-      storedPhotos.push({ name: p.name, lat: p.lat, lng: p.lng, placeName: p.placeName || null, description: p.description || null, url: p.photoUrl || null, data, mime });
+      storedPhotos.push({
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        placeName: p.placeName || null,
+        landmarkNo: toLandmarkValue(p.landmarkNo),
+        landmarkName: toLandmarkValue(p.landmarkName),
+        description: p.description || null,
+        url: p.photoUrl || null,
+        data,
+        mime,
+      });
     }
   }
   if (storedPhotos.length === 0) return;
@@ -1120,6 +1172,7 @@ async function autoSaveTrip() {
     await saveTripToDB(trip);
     await refreshTripList();
     await renderPublicTripsPanel();
+    await renderTripListPanel();
     setStatus('自動保存しました');
     setTimeout(() => setStatus(''), 1500);
   } catch (_) {}
@@ -1133,20 +1186,20 @@ function scheduleAutoSave() {
 async function saveTrip() {
   if (!isEditor()) {
     setStatus('保存するにはログインしてください', true);
-    return;
+    return false;
   }
   const name = document.getElementById('tripNameInput').value.trim();
   if (!name) {
     setStatus('トリップ名を入力してください', true);
-    return;
+    return false;
   }
   if (photos.length === 0) {
     setStatus('写真がありません', true);
-    return;
+    return false;
   }
   if (!currentTripId && !isNewTrip) {
     setStatus('既存トリップの変更は読み込み後に保存できます。新規トリップは「新規」をクリックしてから作成してください。', true);
-    return;
+    return false;
   }
 
   setStatus('保存中…');
@@ -1166,13 +1219,24 @@ async function saveTrip() {
       mime = p.mime || 'image/jpeg';
     }
     if (data) {
-      storedPhotos.push({ name: p.name, lat: p.lat, lng: p.lng, placeName: p.placeName || null, description: p.description || null, url: p.photoUrl || null, data, mime });
+      storedPhotos.push({
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        placeName: p.placeName || null,
+        landmarkNo: toLandmarkValue(p.landmarkNo),
+        landmarkName: toLandmarkValue(p.landmarkName),
+        description: p.description || null,
+        url: p.photoUrl || null,
+        data,
+        mime,
+      });
     }
   }
 
   if (storedPhotos.length === 0) {
     setStatus('写真のデータを読み込めませんでした。再度アップロードしてください。', true);
-    return;
+    return false;
   }
 
   const description = document.getElementById('tripDescInput').value.trim() || null;
@@ -1195,7 +1259,7 @@ async function saveTrip() {
     await saveTripToDB(trip);
   } catch (err) {
     setStatus(err.message || '保存に失敗しました', true);
-    return;
+    return false;
   }
   currentTripId = id;
   isNewTrip = false;
@@ -1205,7 +1269,9 @@ async function saveTrip() {
   updateTripInfoDisplay(trip);
   await refreshTripList();
   await renderPublicTripsPanel();
+  await renderTripListPanel();
   setStatus(`「${name}」を保存しました`);
+  return true;
 }
 
 async function loadTrip() {
@@ -1233,6 +1299,7 @@ async function loadTrip() {
   if (isPublicTrip) currentTripId = null;
   else currentTripId = id;
   isNewTrip = false;
+  _showTripListInPanel = false;
 
   photos.forEach(p => {
     if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
@@ -1249,6 +1316,8 @@ async function loadTrip() {
     lat: p.lat,
     lng: p.lng,
     placeName: p.placeName || null,
+    landmarkNo: toLandmarkValue(p.landmarkNo),
+    landmarkName: toLandmarkValue(p.landmarkName),
     description: p.description || null,
     photoUrl: p.url || null,
     url: base64ToUrl(p.mime, p.data),
@@ -1280,6 +1349,7 @@ async function loadTrip() {
 
   renderAllPhotosStrip();
   addPhotoMarkers();
+  await renderPublicTripsPanel();
 
   if (map) {
     map.removeLayer(osmLayer);
@@ -1288,11 +1358,7 @@ async function loadTrip() {
 
   fitMapToFullExtent();
   if (photos.length > 0) {
-    if (isMobileView()) {
-      document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
-    } else {
-      openAllPhotosThumbnails();
-    }
+    document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
     showPhoto(0, { popupOnly: true, skipMapZoom: true });
   }
   const needGeocode = photos.some(p => p.lat != null && !p.placeName);
@@ -1318,6 +1384,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   if (tripId.startsWith('public_')) currentTripId = null;
   else currentTripId = tripId;
   isNewTrip = false;
+  _showTripListInPanel = false;
 
   photos.forEach(p => {
     if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
@@ -1334,6 +1401,8 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
     lat: p.lat,
     lng: p.lng,
     placeName: p.placeName || null,
+    landmarkNo: toLandmarkValue(p.landmarkNo),
+    landmarkName: toLandmarkValue(p.landmarkName),
     description: p.description || null,
     photoUrl: p.url || null,
     url: base64ToUrl(p.mime, p.data),
@@ -1366,6 +1435,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
 
   renderAllPhotosStrip();
   addPhotoMarkers();
+  await renderPublicTripsPanel();
 
   if (map) {
     map.removeLayer(osmLayer);
@@ -1375,11 +1445,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   const idx = Math.min(photoIndex, photos.length - 1);
   if (photos.length > 0) {
     fitMapToFullExtent();
-    if (isMobileView()) {
-      document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
-    } else {
-      openAllPhotosThumbnails();
-    }
+    document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
     if (idx >= 0) showPhoto(idx, { popupOnly: true, skipMapZoom: idx === 0 });
   }
   const needGeocode = photos.some(p => p.lat != null && !p.placeName);
@@ -1401,7 +1467,9 @@ function updateTripInfoDisplay(trip) {
   const tripNameNav = document.getElementById('tripNameNav');
   const metaRow = document.getElementById('tripInfoMetaRow');
   const name = trip?.name ?? document.getElementById('tripNameInput')?.value?.trim();
-  if (!name) {
+  const hasPhotos = photos.length > 0;
+  const showNav = name || hasPhotos;
+  if (!showNav) {
     if (tripNameNav) {
       tripNameNav.style.display = 'none';
       tripNameNav.classList.remove('visible');
@@ -1419,15 +1487,15 @@ function updateTripInfoDisplay(trip) {
   }
   const sep = document.getElementById('headerControlsSep');
   if (sep) sep.style.display = '';
-  const countText = photos.length > 0 ? `（${photos.length}枚）` : '';
-  if (nameEl) nameEl.textContent = name + countText;
+  const countText = hasPhotos ? `写真（${photos.length}枚）` : (name || '');
+  if (nameEl) nameEl.textContent = countText;
   if (tripNameNav) {
     tripNameNav.style.display = '';
-    nameEl?.classList.toggle('trip-name-clickable', photos.length > 0);
+    nameEl?.classList.toggle('trip-name-clickable', hasPhotos);
     if (nameEl) {
-      nameEl.style.cursor = photos.length > 0 ? 'pointer' : '';
-      nameEl.title = photos.length > 0 ? 'クリックでサムネイルの表示・非表示を切り替え' : '';
-      nameEl.onclick = photos.length > 0 ? () => {
+      nameEl.style.cursor = hasPhotos ? 'pointer' : '';
+      nameEl.title = hasPhotos ? 'クリックでサムネイルの表示・非表示を切り替え' : '';
+      nameEl.onclick = hasPhotos ? () => {
         fitMapToFullExtent();
         toggleAllPhotosThumbnails();
       } : null;
@@ -1436,19 +1504,20 @@ function updateTripInfoDisplay(trip) {
   const desc = trip?.description ?? document.getElementById('tripDescInput')?.value?.trim();
   const url = trip?.url ?? document.getElementById('tripUrlInput')?.value?.trim();
   const parts = [];
+  if (name && photos.length > 0) {
+    parts.push(`<span class="trip-meta-name">${escapeHtml(name)}</span>`);
+  }
   if (desc || url) {
     let descPart = '';
     const descText = desc ? (desc.length > 40 ? desc.slice(0, 40) + '…' : desc) : '';
     if (descText) {
-      if (url) {
-        descPart = `<a href="${escapeHtml(url)}" class="trip-meta-desc trip-desc-link" target="_blank" rel="noopener noreferrer" title="${escapeHtml(desc)}">${escapeHtml(descText)}</a>`;
-      } else {
-        descPart = `<span class="trip-meta-desc" title="${escapeHtml(desc)}">${escapeHtml(descText)}</span>`;
-      }
-    } else if (url) {
-      descPart = `<a href="${escapeHtml(url)}" class="trip-meta-desc trip-desc-link" target="_blank" rel="noopener noreferrer" title="リンクを開く">${escapeHtml(url.length > 40 ? url.slice(0, 40) + '…' : url)}</a>`;
+      descPart = `<span class="trip-meta-desc" title="${escapeHtml(desc)}">${escapeHtml(descText)}</span>`;
     }
-    parts.push(descPart);
+    if (url) {
+      const linkPart = `<a href="${escapeHtml(url)}" class="trip-meta-detail-link" target="_blank" rel="noopener noreferrer" title="リンクを開く">[詳細リンク]</a>`;
+      descPart = descPart ? descPart + ' ' + linkPart : linkPart;
+    }
+    if (descPart) parts.push(descPart);
   }
   const gpxSummary = getGpxSummary();
   const distKm = gpxSummary?.distanceKm ?? getRouteDistanceKm();
@@ -1490,6 +1559,7 @@ function clearCurrentTrip() {
   currentTripId = null;
   isNewTrip = false;
   photos = [];
+  _showTripListInPanel = false;
   gpxData = null;
   gpxTrackPoints = [];
   document.getElementById('tripNameInput').value = '';
@@ -1518,6 +1588,7 @@ function clearCurrentTrip() {
   document.getElementById('playPhotoOverlay')?.classList.remove('visible');
   updatePhotoNav();
   updateSaveButtonState();
+  renderPublicTripsPanel();
   setStatus('');
 }
 
@@ -1557,7 +1628,7 @@ async function loadPublicTripsFromServer() {
   await renderPublicTripsPanel();
 }
 
-/** サーバー公開 + IndexedDBの公開トリップを結合して返す */
+/** サーバー公開 + IndexedDBの公開トリップを結合して返す（ローカル保存を優先＝変更が即反映） */
 async function getDisplayablePublicTrips() {
   const serverTrips = publicTrips.map(t => ({ ...t, _fromServer: true }));
   let dbTrips = [];
@@ -1565,19 +1636,46 @@ async function getDisplayablePublicTrips() {
     dbTrips = await loadTripsFromDB() || [];
   } catch (_) {}
   const localPublic = dbTrips.filter(t => t.public).map(t => ({ ...t, _fromServer: false }));
+  const localById = new Map(localPublic.map(t => [t.id, t]));
   const serverIds = new Set(serverTrips.map(t => t.id));
   const localOnly = localPublic.filter(t => !serverIds.has(t.id));
-  return [...serverTrips, ...localOnly];
+  const merged = serverTrips.map(t => localById.has(t.id) ? localById.get(t.id) : t);
+  const result = [...merged, ...localOnly];
+  result.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return result;
 }
 
 let _publicTripUrls = [];
+let _tripMenuMap = null;
+let _tripMenuUrls = [];
+let _showTripListInPanel = false;
 
 async function renderPublicTripsPanel() {
   const panel = document.getElementById('publicTripsPanel');
-  const list = document.getElementById('publicTripsList');
-  if (!panel || !list) return;
+  const listEl = document.getElementById('publicTripsList');
+  const tripListWrap = document.getElementById('tripPanelTripList');
+  const tripMenuWrap = document.getElementById('tripPanelTripMenu');
+  if (!panel || !listEl) return;
+
+  if (photos.length > 0 && !_showTripListInPanel) {
+    if (tripListWrap) tripListWrap.style.display = 'none';
+    if (tripMenuWrap) tripMenuWrap.style.display = 'flex';
+    await renderTripMenu();
+    return;
+  }
+
+  if (_tripMenuMap) {
+    _tripMenuMap.remove();
+    _tripMenuMap = null;
+  }
+  _tripMenuUrls.forEach(u => { if (u?.startsWith?.('blob:')) URL.revokeObjectURL(u); });
+  _tripMenuUrls = [];
+
+  if (tripListWrap) tripListWrap.style.display = 'flex';
+  if (tripMenuWrap) tripMenuWrap.style.display = 'none';
+
   panel.classList.remove('no-trips');
-  list.innerHTML = '';
+  listEl.innerHTML = '';
   _publicTripUrls.forEach(u => { if (u?.startsWith?.('blob:')) URL.revokeObjectURL(u); });
   _publicTripUrls = [];
   const displayTrips = await getDisplayablePublicTrips();
@@ -1585,7 +1683,7 @@ async function renderPublicTripsPanel() {
     const empty = document.createElement('p');
     empty.className = 'public-trips-empty';
     empty.textContent = '公開トリップがありません';
-    list.appendChild(empty);
+    listEl.appendChild(empty);
     return;
   }
   displayTrips.forEach((trip) => {
@@ -1627,8 +1725,186 @@ async function renderPublicTripsPanel() {
     }
     const loadId = trip._fromServer ? 'public_' + trip.id : trip.id;
     card.onclick = () => loadTripAndShowPhoto(loadId, 0);
-    list.appendChild(card);
+    listEl.appendChild(card);
   });
+}
+
+async function renderTripMenu() {
+  const content = document.getElementById('tripMenuContent');
+  if (!content) return;
+
+  const name = document.getElementById('tripNameInput')?.value?.trim() || 'トリップ';
+  const desc = (document.getElementById('tripDescInput')?.value || '').trim();
+  const url = (document.getElementById('tripUrlInput')?.value || '').trim();
+  const gpxSummary = getGpxSummary();
+  const distKm = gpxSummary?.distanceKm ?? getRouteDistanceKm();
+  const dateStr = gpxSummary?.dateStr || '';
+  const distStr = distKm != null ? (distKm < 1 ? (distKm * 1000).toFixed(0) + ' m' : distKm.toFixed(1) + ' km') : '';
+  const speedStr = gpxSummary?.avgSpeedKmh != null ? formatSpeed(gpxSummary.avgSpeedKmh) : '';
+
+  const landmarks = [];
+  const seen = new Set();
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
+    const no = toLandmarkValue(p.landmarkNo);
+    const nm = toLandmarkValue(p.landmarkName);
+    const text = [no, nm].filter(Boolean).join(' ');
+    if (text && !seen.has(text)) {
+      seen.add(text);
+      landmarks.push({ text, photoIndex: i });
+      if (landmarks.length >= 9) break;
+    }
+  }
+
+  const titleEl = document.getElementById('tripMenuTitle');
+  if (titleEl) titleEl.textContent = `${name}メニュー`;
+
+  content.innerHTML = '';
+  content.className = 'trip-menu-content';
+
+  if (desc || url) {
+    const descEl = document.createElement('div');
+    descEl.className = 'trip-menu-section-body';
+    if (desc) {
+      descEl.appendChild(document.createTextNode(desc));
+    }
+    if (url) {
+      if (desc) descEl.appendChild(document.createTextNode(' '));
+      const link = document.createElement('a');
+      link.href = url;
+      link.className = 'trip-menu-detail-link';
+      link.textContent = '[詳細リンク]';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      descEl.appendChild(link);
+    }
+    content.appendChild(descEl);
+  }
+
+  const metaParts = [dateStr, distStr ? `${distStr}${speedStr ? `（${speedStr}）` : ''}` : ''].filter(Boolean);
+  if (metaParts.length > 0) {
+    const metaEl = document.createElement('div');
+    metaEl.className = 'trip-menu-section-body trip-menu-meta';
+    metaEl.textContent = metaParts.join(' ');
+    content.appendChild(metaEl);
+  }
+
+  if (photos.length > 0 && !isMobileView()) {
+    const controlsEl = document.createElement('div');
+    controlsEl.className = 'trip-menu-controls';
+    controlsEl.innerHTML = `
+      <div class="trip-menu-controls-row">
+        <span class="trip-menu-photo-count">写真（${photos.length}枚）</span>
+        <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="tripMenuPrevBtn">前へ</button>
+        <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="tripMenuNextBtn">次へ</button>
+      </div>
+      <div class="trip-menu-controls-row">
+        <button type="button" class="btn btn-primary btn-sm play-btn" id="tripMenuPlayBtn" disabled>▶ 再生</button>
+        <button type="button" class="btn btn-secondary btn-sm stop-btn" id="tripMenuStopBtn" disabled>停止</button>
+        <select id="tripMenuIntervalSelect">
+          <option value="1">1秒</option>
+          <option value="3" selected>3秒</option>
+          <option value="5">5秒</option>
+        </select>
+      </div>
+    `;
+    content.appendChild(controlsEl);
+    const photoCountEl = content.querySelector('.trip-menu-photo-count');
+    if (photoCountEl) {
+      photoCountEl.classList.add('trip-menu-photo-count-clickable');
+      photoCountEl.title = 'クリックでサムネイルの表示・非表示を切り替え';
+      photoCountEl.onclick = () => {
+        fitMapToFullExtent();
+        toggleAllPhotosThumbnails();
+      };
+    }
+    const prevBtn = document.getElementById('tripMenuPrevBtn');
+    const nextBtn = document.getElementById('tripMenuNextBtn');
+    const playBtn = document.getElementById('tripMenuPlayBtn');
+    const stopBtn = document.getElementById('tripMenuStopBtn');
+    const intervalSelect = document.getElementById('tripMenuIntervalSelect');
+    const mainIntervalSelect = document.getElementById('intervalSelect');
+    if (prevBtn) prevBtn.onclick = () => { if (currentIndex > 0) showPhotoWithPopup(currentIndex - 1); };
+    if (nextBtn) nextBtn.onclick = () => { if (currentIndex < photos.length - 1) showPhotoWithPopup(currentIndex + 1); };
+    if (playBtn) playBtn.onclick = startPlay;
+    if (stopBtn) stopBtn.onclick = stopPlay;
+    if (intervalSelect && mainIntervalSelect) {
+      intervalSelect.value = mainIntervalSelect.value;
+      intervalSelect.onchange = () => { mainIntervalSelect.value = intervalSelect.value; };
+    }
+    setPlayStopDisabled(photos.filter(p => p.lat != null && p.lng != null).length === 0, true);
+  }
+
+  const mapContainer = document.createElement('div');
+  mapContainer.className = 'trip-menu-map-wrap';
+  mapContainer.innerHTML = '<div id="tripMenuMap" class="trip-menu-map"></div><div class="trip-menu-thumbnails" id="tripMenuThumbnails"></div>';
+  content.appendChild(mapContainer);
+
+  const thumbsDiv = document.getElementById('tripMenuThumbnails');
+  if (thumbsDiv) {
+    photos.slice(0, 20).forEach((p, i) => {
+      const div = document.createElement('div');
+      div.className = 'trip-menu-thumb';
+      div.title = p.name;
+      if (p.url) {
+        const img = document.createElement('img');
+        img.src = p.url;
+        if (p.url.startsWith('blob:')) _tripMenuUrls.push(p.url);
+        img.alt = '';
+        img.onclick = () => showPhoto(i);
+        div.appendChild(img);
+      }
+      thumbsDiv.appendChild(div);
+    });
+  }
+
+  if (landmarks.length > 0) {
+    const stampsEl = document.createElement('div');
+    stampsEl.className = 'trip-menu-stamps';
+    stampsEl.innerHTML = '<div class="trip-menu-stamps-grid"></div>';
+    const grid = stampsEl.querySelector('.trip-menu-stamps-grid');
+    landmarks.forEach(({ text, photoIndex }) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'trip-menu-stamp-card';
+      card.textContent = text;
+      card.title = `クリックで地図上に表示`;
+      card.onclick = () => showPhotoWithPopup(photoIndex);
+      grid.appendChild(card);
+    });
+    content.appendChild(stampsEl);
+  }
+
+  if (_tripMenuMap) {
+    _tripMenuMap.remove();
+    _tripMenuMap = null;
+  }
+  const mapEl = document.getElementById('tripMenuMap');
+  if (mapEl && typeof L !== 'undefined') {
+    const routePoints = getGpxRoutePoints();
+    const withGps = photos.filter(p => p.lat != null && p.lng != null);
+    let bounds = null;
+    if (withGps.length > 0) bounds = L.latLngBounds(withGps.map(p => [p.lat, p.lng]));
+    if (routePoints.length >= 2) {
+      const routeBounds = L.latLngBounds(routePoints);
+      bounds = bounds ? bounds.extend(routeBounds) : routeBounds;
+    }
+    _tripMenuMap = L.map('tripMenuMap', { zoomControl: false }).setView(DEFAULT_CENTER, 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(_tripMenuMap);
+    if (routePoints.length >= 2) {
+      const line = createStyledRouteLayer(routePoints);
+      if (line) line.addTo(_tripMenuMap);
+    }
+    withGps.forEach((p) => {
+      const idx = photos.indexOf(p);
+      const icon = L.divIcon({ className: 'trip-menu-marker', html: '<span></span>', iconSize: [8, 8], iconAnchor: [4, 4] });
+      L.marker([p.lat, p.lng], { icon }).addTo(_tripMenuMap).on('click', () => showPhoto(idx));
+    });
+    if (bounds) {
+      _tripMenuMap.fitBounds(bounds, { padding: [10, 10], maxZoom: 14 });
+    }
+    setTimeout(() => _tripMenuMap?.invalidateSize(), 100);
+  }
 }
 
 /** エクスポート用に写真を圧縮し、目標サイズ（100MB）以下にする */
@@ -1904,6 +2180,13 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+/** ランドマーク番号・名を保存用に正規化（"0" や空白を正しく扱う） */
+function toLandmarkValue(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+}
+
 function goToHome() {
   if (isPlaying) stopPlay();
   clearCurrentTrip();
@@ -1924,6 +2207,14 @@ function closeMenu() {
   document.getElementById('menuPanel').classList.remove('open');
 }
 
+function closeTripListPanel() {
+  const overlay = document.querySelector('.trip-list-overlay');
+  const panel = document.querySelector('.trip-list-panel');
+  if (overlay) overlay.classList.remove('visible');
+  if (panel) panel.classList.remove('open');
+  closeMenu();
+}
+
 /* --- 写真編集モーダル --- */
 let _photoEditTripId = null;
 let _photoEditIndex = null;
@@ -1936,6 +2227,8 @@ function openPhotoEditModal(photoIndex) {
   if (!photo) return;
 
   document.getElementById('photoEditPreview').innerHTML = `<img src="${photo.url}" alt="${escapeHtml(photo.name)}">`;
+  document.getElementById('photoEditLandmarkNo').value = photo.landmarkNo ?? '';
+  document.getElementById('photoEditLandmarkName').value = photo.landmarkName ?? '';
   document.getElementById('photoEditDesc').value = photo.description || '';
   document.getElementById('photoEditUrl').value = photo.photoUrl || '';
   document.getElementById('photoEditModal').classList.add('open');
@@ -1951,6 +2244,8 @@ async function openPhotoEditModalFromTrip(tripId, photoIndex) {
 
   const imgUrl = base64ToUrl(p.mime, p.data);
   document.getElementById('photoEditPreview').innerHTML = `<img src="${imgUrl}" alt="${escapeHtml(p.name)}">`;
+  document.getElementById('photoEditLandmarkNo').value = p.landmarkNo ?? '';
+  document.getElementById('photoEditLandmarkName').value = p.landmarkName ?? '';
   document.getElementById('photoEditDesc').value = p.description || '';
   document.getElementById('photoEditUrl').value = p.url || '';
   document.getElementById('photoEditModal').classList.add('open');
@@ -1964,32 +2259,57 @@ function closePhotoEditModal() {
 }
 
 async function savePhotoEdit() {
-  const desc = document.getElementById('photoEditDesc').value.trim();
-  const url = document.getElementById('photoEditUrl').value.trim();
+  const landmarkNo = toLandmarkValue(document.getElementById('photoEditLandmarkNo').value);
+  const landmarkName = toLandmarkValue(document.getElementById('photoEditLandmarkName').value);
+  const desc = document.getElementById('photoEditDesc').value.trim() || null;
+  const url = document.getElementById('photoEditUrl').value.trim() || null;
+  const metadata = { landmarkNo, landmarkName, description: desc, url };
 
-  if (_photoEditTripId) {
+  if (!_photoEditTripId) {
+    closePhotoEditModal();
+    setStatus('保存できません（トリップが読み込まれていません。メニューからトリップを選択して「読み込み」してください）', true);
+    return;
+  }
+
+  // 公開トリップは保存不可
+  if (_photoEditTripId.startsWith('public_')) {
+    closePhotoEditModal();
+    setStatus('公開トリップは編集・保存できません', true);
+    return;
+  }
+
+  // メモリ上の photos を更新（表示中のトリップの場合）
+  if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
+    photos[_photoEditIndex].landmarkNo = landmarkNo;
+    photos[_photoEditIndex].landmarkName = landmarkName;
+    photos[_photoEditIndex].description = desc;
+    photos[_photoEditIndex].photoUrl = url;
+  }
+
+  // DB に直接保存（savePhotoMetadataToDB が最も確実）
+  let saved = false;
+  try {
+    saved = await savePhotoMetadataToDB(_photoEditTripId, _photoEditIndex, metadata);
+  } catch (err) {
+    console.error('savePhotoEdit error:', err);
+  }
+
+  if (saved) {
+    addPhotoMarkers();
+    renderAllPhotosStrip();
+    await refreshTripList();
+    await renderPublicTripsPanel();
+    // 写真オーバーレイを表示（ランドマークを上部に目立つように表示）
     if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
-      photos[_photoEditIndex].description = desc || null;
-      photos[_photoEditIndex].photoUrl = url || null;
-      showPhotoWithPopup(_photoEditIndex);
-      await autoSaveTrip();
-    } else {
-      const trip = await loadTripFromDB(_photoEditTripId);
-      if (trip && trip.photos && trip.photos[_photoEditIndex]) {
-        trip.photos[_photoEditIndex].description = desc || null;
-        trip.photos[_photoEditIndex].url = url || null;
-        await saveTripToDB(trip);
-      }
-      await refreshTripList();
-      await renderPublicTripsPanel();
+      showPhoto(_photoEditIndex);
     }
+    setStatus('詳細設定を保存しました');
+    setTimeout(() => setStatus(''), 2000);
+  } else {
+    setStatus('保存に失敗しました。トリップを再度読み込んでお試しください。', true);
   }
 
   closePhotoEditModal();
-  if (document.getElementById('allPhotosThumbnails')?.classList.contains('visible')) {
-    renderAllPhotosStrip();
-  }
-  setStatus('説明・URLを保存しました');
 }
 
 async function downloadVideo() {
@@ -2195,15 +2515,33 @@ async function setup() {
   document.getElementById('tripImportBtn').onclick = importTripsFromFile;
 
   document.getElementById('photoEditClose').onclick = closePhotoEditModal;
-  document.getElementById('photoEditSave').onclick = savePhotoEdit;
-  document.getElementById('photoEditModal').onclick = e => {
+  // イベント委譲: オーバーレイでクリックを一元処理（ボタン単体のonclickが発火しない環境対策）
+  document.getElementById('photoEditModal').addEventListener('click', async (e) => {
+    if (e.target.closest('#photoEditSave')) {
+      e.preventDefault();
+      e.stopPropagation();
+      await savePhotoEdit();
+      return;
+    }
     if (e.target.id === 'photoEditModal') closePhotoEditModal();
-  };
+  });
 
   document.getElementById('playOverlayClose').onclick = () => {
     if (!isPlaying) {
       document.getElementById('playPhotoOverlay').classList.remove('visible', 'play-mode');
     }
+  };
+  document.getElementById('playOverlayEdit').onclick = (e) => {
+    e.stopPropagation();
+    if (isEditor() && photos.length > 0 && currentIndex >= 0) {
+      openPhotoEditModal(currentIndex);
+    }
+  };
+
+  document.getElementById('tripMenuBack').onclick = (e) => {
+    e.preventDefault();
+    _showTripListInPanel = true;
+    renderPublicTripsPanel();
   };
 
   document.addEventListener('click', e => {
@@ -2211,6 +2549,15 @@ async function setup() {
     if (link && link.href) {
       e.preventDefault();
       window.open(link.href, '_blank', 'noopener,noreferrer');
+    }
+    const editBtn = e.target.closest('.popup-photo-edit');
+    if (editBtn && isEditor()) {
+      const idx = parseInt(editBtn.dataset.photoIndex, 10);
+      if (!isNaN(idx) && photos[idx]) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPhotoEditModal(idx);
+      }
     }
   });
 

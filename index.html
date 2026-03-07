@@ -58,7 +58,7 @@
             <button type="button" class="btn btn-secondary btn-sm stop-btn" id="menuStopBtn" disabled>停止</button>
           </div>
           <div class="menu-row">
-            <span class="photo-nav-label photo-all-photos-btn all-photos-btn" id="menuAllPhotosBtn" title="全ての写真をサムネイル表示">全ての写真</span>
+            <span class="photo-nav-label photo-all-photos-btn all-photos-btn" id="menuAllPhotosBtn" title="全ての写真をサムネイル表示">写真（0枚）</span>
             <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="menuPrevBtn">前へ</button>
             <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="menuNextBtn">次へ</button>
           </div>
@@ -125,11 +125,19 @@
     <div class="modal-overlay" id="photoEditModal">
       <div class="modal">
         <div class="modal-header">
-          <h2>写真の説明・URL</h2>
+          <h2>写真の詳細設定</h2>
           <button type="button" class="modal-close" id="photoEditClose" aria-label="閉じる">&times;</button>
         </div>
         <div class="modal-body">
           <div class="photo-edit-preview" id="photoEditPreview"></div>
+          <div class="modal-field">
+            <label for="photoEditLandmarkNo">ランドマーク番号:</label>
+            <input type="text" id="photoEditLandmarkNo" class="modal-input" placeholder="例: 1, 2, 3（地図上に番号を表示）">
+          </div>
+          <div class="modal-field">
+            <label for="photoEditLandmarkName">ランドマーク名:</label>
+            <input type="text" id="photoEditLandmarkName" class="modal-input" placeholder="例: 東京タワー">
+          </div>
           <div class="modal-field">
             <label for="photoEditDesc">説明:</label>
             <textarea id="photoEditDesc" class="modal-input" rows="3" placeholder="写真の説明を入力"></textarea>
@@ -149,8 +157,12 @@
       <div class="map-container">
         <div id="map"></div>
         <div class="play-photo-overlay" id="playPhotoOverlay">
-          <button type="button" class="play-overlay-close" id="playOverlayClose" aria-label="閉じる">&times;</button>
+          <div class="play-overlay-buttons">
+            <button type="button" class="play-overlay-edit editor-only" id="playOverlayEdit" aria-label="詳細設定" title="詳細設定（ランドマーク・説明・URL）">✎</button>
+            <button type="button" class="play-overlay-close" id="playOverlayClose" aria-label="閉じる">&times;</button>
+          </div>
           <div class="play-overlay-photo">
+            <div class="play-overlay-landmark-watermark" id="playOverlayLandmark"></div>
             <img src="" alt="">
           </div>
           <div class="play-overlay-gpx" id="playOverlayGpx"></div>
@@ -161,8 +173,15 @@
         </div>
       </div>
       <aside class="public-trips-panel" id="publicTripsPanel">
-        <h3 class="public-trips-title">公開トリップ</h3>
-        <div class="public-trips-list" id="publicTripsList"></div>
+        <div class="trip-panel-trip-list" id="tripPanelTripList">
+          <h3 class="public-trips-title">公開トリップ一覧</h3>
+          <div class="public-trips-list" id="publicTripsList"></div>
+        </div>
+        <div class="trip-panel-trip-menu" id="tripPanelTripMenu" style="display:none">
+          <a href="#" class="trip-menu-back" id="tripMenuBack">公開トリップ一覧</a>
+          <h3 class="trip-menu-title" id="tripMenuTitle"></h3>
+          <div class="trip-menu-content" id="tripMenuContent"></div>
+        </div>
       </aside>
     </div>
 

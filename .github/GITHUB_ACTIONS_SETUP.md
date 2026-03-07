@@ -1,6 +1,8 @@
-# GitHub Actions セットアップ手順
+# GitHub Actions セットアップ手順（Airgo）
 
 main ブランチへの push で自動的に GCP Cloud Run にデプロイされ、https://airgo.ktrips.net で公開されます。
+
+Yonda のデプロイ構成を参考にしています。
 
 ## 前提条件
 
@@ -9,169 +11,94 @@ main ブランチへの push で自動的に GCP Cloud Run にデプロイされ
 
 ---
 
-## 1. GCP の準備
-
-### 1.1 必要な API の有効化
+## 1. GCP サービスアカウントの作成
 
 ```bash
-gcloud services enable \
-  run.googleapis.com \
-  artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com \
-  iam.googleapis.com
-```
+export PROJECT_ID="your-gcp-project-id"
+gcloud config set project $PROJECT_ID
 
-### 1.2 認証方法の選択
-
-**方法A: サービスアカウントキー（簡単・推奨で開始）**
-
-```bash
 # サービスアカウント作成
 gcloud iam service-accounts create github-actions-airgo \
-  --display-name="GitHub Actions Airgo Deploy"
+  --display-name="GitHub Actions for Airgo"
 
 # 必要な権限を付与
-PROJECT_ID=$(gcloud config get-value project)
-SA_EMAIL="github-actions-airgo@${PROJECT_ID}.iam.gserviceaccount.com"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/run.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/artifactregistry.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/iam.serviceAccountUser"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/cloudbuild.builds.builder"
-
-# キーを生成（JSON をダウンロード）
-gcloud iam service-accounts keys create ~/github-actions-key.json \
-  --iam-account=$SA_EMAIL
+for role in "roles/run.admin" "roles/artifactregistry.admin" "roles/cloudbuild.builds.builder" \
+  "roles/iam.serviceAccountUser" "roles/serviceusage.serviceUsageAdmin"; do
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:github-actions-airgo@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="$role" --quiet
+done
 ```
 
-**方法B: Workload Identity Federation（セキュア・キー不要）**
+## 2. サービスアカウントキーのダウンロード
 
 ```bash
-PROJECT_ID=$(gcloud config get-value project)
-PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
-POOL_NAME="github-pool"
-PROVIDER_NAME="github-provider"
-
-# プールとプロバイダー作成
-gcloud iam workload-identity-pools create $POOL_NAME \
-  --location="global" \
-  --display-name="GitHub Actions"
-
-gcloud iam workload-identity-pools providers create-oidc $PROVIDER_NAME \
-  --location="global" \
-  --workload-identity-pool=$POOL_NAME \
-  --display-name="GitHub" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
-
-# サービスアカウント作成と権限付与
-gcloud iam service-accounts create github-actions-airgo \
-  --display-name="GitHub Actions Airgo Deploy"
-
-SA_EMAIL="github-actions-airgo@${PROJECT_ID}.iam.gserviceaccount.com"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/run.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/artifactregistry.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/iam.serviceAccountUser"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/cloudbuild.builds.builder"
-
-# GitHub リポジトリをサービスアカウントにバインド
-gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
-  --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.repository/ktrips/airgo"
+gcloud iam service-accounts keys create ~/sa-key-airgo.json \
+  --iam-account=github-actions-airgo@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
----
+`~/sa-key-airgo.json` にキーファイルが作成されます。`cat ~/sa-key-airgo.json` で表示された JSON の全文（`{` から `}` まで）をコピーしてください。登録後はローカルのキーファイルを削除して構いません。
 
-## 2. GitHub Secrets の設定
+## 3. GitHub Secrets の登録
 
-リポジトリの **Settings → Secrets and variables → Actions** で以下を追加：
+GitHub リポジトリ → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-| Secret 名 | 説明 | 必須 |
-|-----------|------|------|
-| `GCP_PROJECT_ID` | GCP プロジェクト ID | ✅ 常に |
-| `GCP_SA_KEY` | サービスアカウントキー JSON（方法A の場合） | 方法A で必須 |
-| `WIF_PROVIDER` | Workload Identity プロバイダー（方法B の場合） | 方法B で必須 |
-| `WIF_SERVICE_ACCOUNT` | サービスアカウントメール（方法B の場合） | 方法B で必須 |
+| Secret 名 | 値 | 必須 |
+|-----------|-----|------|
+| `GCP_PROJECT_ID` | GCP プロジェクト ID（例: `my-project-123`） | ✅ |
+| `GCP_SA_KEY` | Step 2 で作成した JSON ファイルの**全文**をコピー&ペースト | ✅ |
 
-### WIF_PROVIDER の値
+## 4. 初回実行
 
-```
-projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-```
+1. **方法A**: `main` ブランチに push する（自動でデプロイが開始）
+2. **方法B**: **Actions** タブ → **Deploy Airgo to Cloud Run** → **Run workflow** で手動実行
 
-`PROJECT_NUMBER` は `gcloud projects describe PROJECT_ID --format='value(projectNumber)'` で確認。
+## 5. public-trips.json について
 
-### GCP_SA_KEY の値
+- リポジトリに `public-trips.json` が含まれている場合、その内容がデプロイされます
+- 含まれていない場合、空の `[]` が自動作成されます（公開トリップなしの状態）
+- 公開トリップを表示するには、アプリでエクスポートした `public-trips.json` をリポジトリにコミットしてください
 
-方法A で生成した JSON ファイルの内容を **1行に圧縮**して貼り付け（改行を削除）。
+## 6. カスタムドメイン airgo.ktrips.net の設定
 
----
-
-## 3. カスタムドメイン airgo.ktrips.net の設定
-
-### 3.1 初回デプロイ後
+### 初回デプロイ後
 
 1. GitHub Actions でデプロイが成功したら、GCP Console の **Cloud Run → ドメインマッピング** を確認
 2. `airgo.ktrips.net` がマッピングされていれば、DNS の指示が表示される
 
-### 3.2 DNS 設定
+### DNS 設定
 
 ktrips.net の DNS 管理画面で、Cloud Run が表示する CNAME レコードを追加：
 
-| タイプ | 名前 | 値 |
-|--------|------|-----|
-| CNAME | airgo | （Cloud Run のドメインマッピング画面に表示される値） |
+```bash
+# マッピング情報を確認
+gcloud run domain-mappings describe \
+  --domain=airgo.ktrips.net \
+  --region=asia-northeast1
+```
 
-※ GCP Console → Cloud Run → ドメインマッピング で `airgo.ktrips.net` を追加すると、追加すべき DNS レコードの **正確な値** が表示されます。
-
-### 3.3 ドメイン検証
-
-- ktrips.net がすでに Google Search Console などで検証済みの場合は、自動で認識される場合があります
-- 未検証の場合は、GCP Console の **ドメイン検証** で手順に従って検証
+SSL 証明書は Google が自動でプロビジョニングします（DNS 設定後、最大15分程度）。
 
 ---
 
-## 4. 動作確認
+## セットアップチェックリスト
 
-1. `main` ブランチに push
-2. GitHub の **Actions** タブでワークフローが実行されることを確認
-3. 成功後、https://airgo.ktrips.net にアクセス（DNS 反映まで数分〜最大48時間かかる場合あり）
+- [ ] ワークフローが `.github/workflows/deploy.yml` に配置されている
+- [ ] `GCP_PROJECT_ID` を GitHub Secrets に登録
+- [ ] `GCP_SA_KEY` を GitHub Secrets に登録
+- [ ] サービスアカウントに必要なロールを付与
 
----
+## よくあるエラーと対処
 
-## トラブルシューティング
+| エラー | 原因 | 対処 |
+|--------|------|------|
+| ワークフローが実行されない | ワークフローがサブディレクトリにある | リポジトリルートの `.github/workflows/` に配置 |
+| `Permission denied` / `403` | サービスアカウントの権限不足 | Step 1 の権限付与を再確認 |
+| `GCP_SA_KEY` invalid | JSON の形式が不正 | キー全体をコピー（`{` から `}` まで） |
+| Cloud Build 失敗 | Dockerfile のビルドエラー | ローカルで `docker build .` を試して動作確認 |
+| イメージが push できない | Artifact Registry の権限 | `roles/artifactregistry.admin` が必要 |
 
-### デプロイが失敗する
+## トリガー
 
-- **権限エラー**: サービスアカウントに `roles/run.admin`, `roles/artifactregistry.admin`, `roles/cloudbuild.builds.builder` が付与されているか確認
-- **Cloud Build 権限エラー**: [DEPLOY.md](../DEPLOY.md) の「デプロイ失敗時の権限設定」を参照し、Compute Engine デフォルトサービスアカウントに権限を付与
-- **public-trips.json がない**: リポジトリに `public-trips.json` が含まれているか確認（空の `[]` でも可）
-
-### カスタムドメインが表示されない
-
-- DNS の設定が正しいか確認（CNAME の向き先）
-- ドメイン検証が完了しているか確認
-- 反映には最大48時間かかることがあります
+- **push**: `main` ブランチに変更があるとデプロイ
+- **workflow_dispatch**: 手動実行
