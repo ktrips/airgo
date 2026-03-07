@@ -18,16 +18,20 @@ echo "Region: $REGION"
 echo "Service: $SERVICE_NAME"
 echo ""
 
-# 公開トリップの確認
-if [ ! -f "public-trips.json" ]; then
+# 公開トリップの確認（data/public-trips.json または public-trips.json）
+if [ -f "data/public-trips.json" ]; then
+  TRIP_FILE="data/public-trips.json"
+elif [ -f "public-trips.json" ]; then
+  TRIP_FILE="public-trips.json"
+else
   echo "エラー: public-trips.json がありません。"
-  echo "  空のファイルを作成: echo '[]' > public-trips.json"
-  echo "  またはアプリでエクスポートしたファイルを airgo フォルダに配置してください。"
+  echo "  data/public-trips.json または public-trips.json を配置してください。"
+  echo "  空のファイル: mkdir -p data && echo '[]' > data/public-trips.json"
   exit 1
 fi
-TRIP_SIZE=$(wc -c < public-trips.json)
+TRIP_SIZE=$(wc -c < "$TRIP_FILE")
 echo "public-trips.json: $TRIP_SIZE bytes"
-if [ "$(cat public-trips.json | tr -d ' \n')" = "[]" ]; then
+if [ "$(cat "$TRIP_FILE" | tr -d ' \n')" = "[]" ]; then
   echo "注意: public-trips.json が空です。公開トリップをエクスポートして配置してください。"
 fi
 if [ "$TRIP_SIZE" -gt 52428800 ]; then

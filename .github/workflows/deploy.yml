@@ -29,13 +29,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure public-trips.json exists
+      - name: Ensure data/public-trips.json exists
         run: |
-          if [[ ! -f public-trips.json ]]; then
-            echo '[]' > public-trips.json
-            echo "⚠ public-trips.json がなかったため空の配列を作成しました"
+          mkdir -p data
+          if [[ ! -f data/public-trips.json ]]; then
+            if [[ -f public-trips.json ]]; then
+              cp public-trips.json data/public-trips.json
+              echo "public-trips.json を data/ にコピーしました"
+            else
+              echo '[]' > data/public-trips.json
+              echo "⚠ data/public-trips.json がなかったため空の配列を作成しました"
+            fi
           fi
-          echo "public-trips.json: $(wc -c < public-trips.json) bytes"
+          echo "data/public-trips.json: $(wc -c < data/public-trips.json) bytes"
 
       - name: Install gcloud and authenticate
         env:

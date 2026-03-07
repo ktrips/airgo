@@ -8,7 +8,7 @@ RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf
 
 # 静的ファイルをコピー
 COPY index.html style.css app.js /usr/share/nginx/html/
-COPY public-trips.json /usr/share/nginx/html/
+COPY data/ /usr/share/nginx/html/data/
 
 # nginx 設定テンプレート（起動時に PORT を置換）
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template

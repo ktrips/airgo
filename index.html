@@ -118,8 +118,10 @@
           <div class="menu-field">
             <label for="aiProviderSelect">AI API:</label>
             <select id="aiProviderSelect" class="menu-select">
-              <option value="openai">OpenAI (GPT)</option>
-              <option value="gemini">Google Gemini</option>
+              <option value="gemini-flash">Google Gemini（低価格）</option>
+              <option value="gemini-pro">Google Gemini（高性能）</option>
+              <option value="openai-mini">OpenAI（低価格）</option>
+              <option value="openai-pro">OpenAI（高性能）</option>
             </select>
           </div>
           <div class="menu-field">
@@ -131,7 +133,8 @@
           </div>
         </section>
         <section class="menu-section">
-          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="公開トリップを AirGo フォルダの public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
+          <button type="button" class="btn btn-secondary menu-full" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
+          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="data/public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
@@ -342,6 +345,39 @@
     </div>
   </div>
 
+  <!-- data フォルダモーダル -->
+  <div class="modal-overlay" id="dataFolderModal">
+    <div class="modal data-folder-modal">
+      <div class="modal-header">
+        <h2>data フォルダ</h2>
+        <button type="button" class="modal-close" id="dataFolderModalClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body data-folder-modal-body">
+        <div class="data-folder-section">
+          <h3>旅行記</h3>
+          <div id="dataFolderTraveloguesList" class="data-folder-list"></div>
+        </div>
+        <div class="data-folder-section">
+          <h3>旅行アニメ</h3>
+          <div id="dataFolderAnimeList" class="data-folder-list data-folder-anime-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 旅行アニメモーダル -->
+  <div class="modal-overlay" id="animeModal">
+    <div class="modal anime-modal">
+      <div class="modal-header">
+        <h2>旅行アニメ</h2>
+        <button type="button" class="modal-close" id="animeModalClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body anime-modal-body">
+        <div id="animeModalContent" class="anime-modal-content"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ログインモーダル -->
   <div class="modal-overlay" id="authModal">
     <div class="modal auth-modal">
@@ -368,6 +404,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

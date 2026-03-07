@@ -67,8 +67,8 @@ python3 -m http.server 8080
 ### 4. 公開トリップのデプロイ
 
 1. トリップを「公開する」で保存
-2. メニュー「📤 公開トリップをエクスポート」で `public-trips.json` をダウンロード
-3. `public-trips.json` を airgo フォルダに配置
+2. メニュー「📤 公開トリップをエクスポート」で `data/public-trips.json` に保存
+3. `data/public-trips.json` を airgo フォルダの data フォルダに配置
 4. `./deploy.sh` で Cloud Run にデプロイ
 
 詳細は [DEPLOY.md](DEPLOY.md) を参照。https://airgo.ktrips.net で公開可能。
@@ -85,7 +85,8 @@ python3 -m http.server 8080
 - **保存先**: ブラウザ内の IndexedDB（`airgo` データベース、`trips` ストア）
 - **保存内容**: ランドマーク番号、ランドマーク名、説明、URL がトリップの写真データに含まれる
 - **永続性**: 同じブラウザ・同じオリジンで永続。ブラウザのデータを削除すると消える
-- **エクスポート**: 「📤 公開トリップをエクスポート」で `public-trips.json` に含まれる
+- **エクスポート**: 「📤 公開トリップをエクスポート」で `data/public-trips.json` に保存
+- **data フォルダ**: 旅行記・旅行アニメは data フォルダに格納。メニュー「📁 data フォルダを開く」で一覧表示・開く
 
 ## 技術
 
