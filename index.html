@@ -341,6 +341,25 @@
     </div>
   </div>
 
+  <!-- アニメキャラ写真アップロードモーダル -->
+  <div class="modal-overlay" id="characterUploadModal">
+    <div class="modal character-upload-modal">
+      <div class="modal-header">
+        <h2>メインキャラの写真</h2>
+        <button type="button" class="modal-close" id="characterUploadClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="character-upload-hint">表紙・各ページのアニメでメインキャラとして描く人物の写真をアップロードしてください。複数枚可。未設定の場合は旅行記の人物を中心に生成します。</p>
+        <div class="character-upload-zone" id="characterUploadZone">
+          <input type="file" id="characterPhotoInput" accept="image/*,.jpg,.jpeg,.JPG,.JPEG,.png,.PNG" multiple hidden>
+          <span class="character-upload-icon">👤</span>
+          <span>人物写真を選択</span>
+        </div>
+        <div class="character-upload-preview" id="characterUploadPreview"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- URL表示ポップアップ -->
   <div class="modal-overlay" id="urlPopupModal">
     <div class="modal url-popup-modal">

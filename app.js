@@ -11,6 +11,7 @@ const PUBLIC_TRIP_CONFIG_KEY = 'airgo_public_trip_config';
 const STAMP_PHOTOS_KEY = 'airgo_stamp_photos';
 const TRAVELOGUE_INFO_KEY = 'airgo_travelogue_info';
 const HIDDEN_ANIME_IDS_KEY = 'airgo_hidden_anime_ids';
+const ANIME_CHARACTER_PHOTOS_KEY = 'airgo_anime_character_photos';
 const POPUP_FEATURES = 'width=720,height=600,scrollbars=yes,resizable=yes';
 const ANIME_IMAGE_GEN = { aspectRatio: '9:16', imageSize: '1K' };
 const ANIME_THUMB_W = 360;
@@ -60,6 +61,24 @@ function setAnimeHidden(id, hidden) {
   if (hidden) set.add(id);
   else set.delete(id);
   localStorage.setItem(HIDDEN_ANIME_IDS_KEY, JSON.stringify([...set]));
+}
+
+function getCharacterPhotos(tripId) {
+  try {
+    const raw = localStorage.getItem(ANIME_CHARACTER_PHOTOS_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    return map[tripId] || [];
+  } catch { return []; }
+}
+
+function setCharacterPhotos(tripId, photos) {
+  try {
+    const raw = localStorage.getItem(ANIME_CHARACTER_PHOTOS_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    if (photos.length === 0) delete map[tripId];
+    else map[tripId] = photos;
+    localStorage.setItem(ANIME_CHARACTER_PHOTOS_KEY, JSON.stringify(map));
+  } catch (_) {}
 }
 
 function checkAuth(user, pass) {
@@ -460,8 +479,15 @@ async function getAnimePagesByTripId(tripId) {
 }
 
 /** トリップの表紙＋漫画ページを表示順で取得（orderでソート） */
-async function getAnimeAllForTripDisplay(tripId) {
-  if (!tripId) return [];
+async function getAnimeAllForTripDisplay(tripId, injectedList = null) {
+  if (!tripId && !injectedList) return [];
+  if (injectedList && Array.isArray(injectedList)) {
+    const partLabels = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4', first: '前半', second: '後半' };
+    return injectedList.map((a, i) => ({
+      ...a,
+      _displayLabel: a.coverImage || a.animeType === 'cover' ? '表紙' : (partLabels[a.half] || `${i + 1}`)
+    }));
+  }
   const list = await listAnimeFromDB();
   const hidden = getHiddenAnimeIds();
   const items = list
@@ -1665,6 +1691,7 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
 
 /** 旅行アニメ表紙を生成（週刊少年ジャンプ表紙風の1枚JPEG） */
 async function generateTravelAnime(tripId) {
+  const rawTripId = (typeof tripId === 'string' && tripId.startsWith('public_')) ? tripId.slice(7) : tripId;
   const apiKey = getAiApiKey()?.trim();
   if (!apiKey) {
     setStatus('AI API Key が設定されていません。メニュー → 設定 から Gemini API Key を入力してください。', true);
@@ -1722,13 +1749,19 @@ async function generateTravelAnime(tripId) {
       }
     } catch (_) {}
 
-    const refPhotos = (pdfData.photos || []).filter(p => p.data).slice(0, 2);
+    const charPhotos = getCharacterPhotos(rawTripId).filter(p => p.data);
+    const traveloguePhotos = (pdfData.photos || []).filter(p => p.data).slice(0, 2);
+    const refPhotos = charPhotos.length > 0 ? charPhotos.slice(0, 3) : traveloguePhotos;
+    const useCharPhotos = charPhotos.length > 0;
     const parts = [];
     for (const p of refPhotos) {
       parts.push({
         inlineData: { mimeType: p.mime || 'image/jpeg', data: p.data }
       });
     }
+    const charInstruction = useCharPhotos
+      ? 'CRITICAL: The reference photos above show the MAIN CHARACTER (主人公). Draw this person as the LARGE protagonist in the CENTER. Use their face, hair, body type, and clothing to create an anime version. This person MUST be the focal point.'
+      : 'LARGE main character (protagonist) in the CENTER - draw the person/people from the reference photos above in anime style. Use their appearance, pose, and clothing as reference to create an anime version of them as the protagonist.';
     parts.push({
       text: `Create a single JPEG image in the style of Weekly Shonen Jump magazine cover (週刊少年ジャンプの表紙風).
 
@@ -1736,7 +1769,7 @@ IMPORTANT: Use VERTICAL/PORTRAIT format (縦長). The image must be tall (height
 
 Layout requirements:
 - LARGE title at the TOP: "${coverTitle}" (this short memorable title, bold and prominent)
-- LARGE main character (protagonist) in the CENTER - draw the person/people from the reference photos above in anime style. Use their appearance, pose, and clothing as reference to create an anime version of them as the protagonist.
+- ${charInstruction}
 - In the BACKGROUND: manga-style panel layout showing the story - small comic panels with anime characters depicting the journey
 
 Story from the travelogue:
@@ -1861,6 +1894,7 @@ Style: Jump anime style (少年ジャンプ風), vibrant colors, dynamic composi
 
 /** 旅行アニメページを生成（5コマ漫画・吹き出し入り） */
 async function generateTravelAnimePage(tripId, part) {
+  const rawTripId = (typeof tripId === 'string' && tripId.startsWith('public_')) ? tripId.slice(7) : tripId;
   const apiKey = getAiApiKey()?.trim();
   if (!apiKey) {
     setStatus('AI API Key が設定されていません。メニュー → 設定 から Gemini API Key を入力してください。', true);
@@ -1910,11 +1944,19 @@ async function generateTravelAnimePage(tripId, part) {
   if (modal) modal.classList.add('open');
 
   try {
-    const refPhotos = halfPhotos.filter(p => p.data).slice(0, 3);
+    const charPhotos = getCharacterPhotos(rawTripId).filter(p => p.data);
+    const scenePhotos = halfPhotos.filter(p => p.data).slice(0, 3);
+    const useCharPhotos = charPhotos.length > 0;
+    const refPhotos = useCharPhotos
+      ? [...charPhotos.slice(0, 2), ...scenePhotos.slice(0, 2)].slice(0, 4)
+      : scenePhotos;
     const parts = [];
     for (const p of refPhotos) {
       parts.push({ inlineData: { mimeType: p.mime || 'image/jpeg', data: p.data } });
     }
+    const charInstruction = useCharPhotos
+      ? 'CRITICAL: The first reference photo(s) show the MAIN CHARACTER (主人公). Draw this person in EVERY panel as the protagonist. Use their face, hair, and style. The other photos show trip scenes for background reference.'
+      : 'Show scenes from the trip based on the reference photos - draw in anime/manga style. The people in the photos are the main characters.';
     parts.push({
       text: `Create a single JPEG image: ONE manga page with exactly 5 comic panels (5コマ漫画).
 
@@ -1924,7 +1966,7 @@ IMPORTANT requirements:
 - 1K resolution (1024px equivalent)
 
 Layout: 5 panels stacked vertically or in a vertical grid. Each panel must:
-- Show a scene from the trip (based on the reference photos above - draw in anime/manga style)
+- ${charInstruction}
 - Include a speech bubble (吹き出し) with Japanese text - short dialogue, thought, or caption (1-2 short sentences per panel)
 - Be clearly separated with panel borders
 - Tell a coherent story of the journey in order
@@ -3199,6 +3241,49 @@ async function handleStampPhotoUpload(file) {
   setStatus('スタンプに写真を登録しました');
 }
 
+let _characterUploadTripId = null;
+
+function openCharacterUploadModal(tripId) {
+  _characterUploadTripId = tripId;
+  const preview = document.getElementById('characterUploadPreview');
+  const input = document.getElementById('characterPhotoInput');
+  if (input) input.value = '';
+  const photos = getCharacterPhotos(tripId);
+  if (preview) {
+    preview.innerHTML = photos.length === 0 ? '' : photos.map((p, i) => {
+      const src = p.data ? `data:${p.mime || 'image/jpeg'};base64,${p.data}` : '';
+      return `<div class="character-preview-item"><img src="${src}" alt=""><button type="button" class="character-preview-remove" data-index="${i}">×</button></div>`;
+    }).join('');
+    preview.querySelectorAll('.character-preview-remove').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.dataset.index, 10);
+        const next = photos.filter((_, i) => i !== idx);
+        setCharacterPhotos(tripId, next);
+        openCharacterUploadModal(tripId);
+      };
+    });
+  }
+  document.getElementById('characterUploadModal').classList.add('open');
+}
+
+async function handleCharacterPhotoUpload(files) {
+  if (!files?.length || _characterUploadTripId == null) return;
+  const tripId = _characterUploadTripId;
+  const existing = getCharacterPhotos(tripId);
+  const added = [];
+  for (let i = 0; i < Math.min(files.length, 5 - existing.length); i++) {
+    const f = files[i];
+    if (!f?.type?.startsWith('image/')) continue;
+    const enc = await resizeImageToBase64(f, 640, 640, 0.85);
+    if (enc) added.push({ mime: enc.mime || 'image/jpeg', data: enc.data });
+  }
+  if (added.length > 0) {
+    setCharacterPhotos(tripId, [...existing, ...added]);
+    openCharacterUploadModal(tripId);
+    setStatus(`メインキャラの写真を${added.length}枚追加しました`);
+  }
+}
+
 let _publicTripConfigDraft = null;
 let _publicTripConfigAllTrips = [];
 
@@ -3614,21 +3699,25 @@ async function renderTripMenu() {
   content.className = 'trip-menu-content';
 
   const tripId = _currentViewingTripId || currentTripId || '';
-  const travelogueInfo = getTravelogueInfo(tripId);
-  const hasLink = travelogueInfo || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent);
+  const rawTripId = (typeof tripId === 'string' && tripId.startsWith('public_')) ? tripId.slice(7) : tripId;
+  const travelogueInfo = getTravelogueInfo(tripId) || getTravelogueInfo(rawTripId);
 
   let prevTrip = null;
   let nextTrip = null;
+  let currentTrip = null;
   const groups = await getDisplayablePublicTripsGrouped();
   const normId = (t) => (t._fromServer ? 'public_' + t.id : t.id);
   for (const g of groups) {
-    const idx = g.trips.findIndex(t => normId(t) === tripId || t.id === tripId);
+    const idx = g.trips.findIndex(t => normId(t) === tripId || t.id === tripId || t.id === rawTripId);
     if (idx >= 0) {
+      currentTrip = g.trips[idx];
       prevTrip = idx > 0 ? g.trips[idx - 1] : null;
       nextTrip = idx < g.trips.length - 1 ? g.trips[idx + 1] : null;
       break;
     }
   }
+  const embeddedTravelogue = currentTrip?.travelogueHtml;
+  const hasLink = travelogueInfo || !!embeddedTravelogue || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent);
 
   const titleText = desc || name;
   const navRow = document.createElement('div');
@@ -3730,6 +3819,7 @@ async function renderTripMenu() {
       editorRow.innerHTML = `
         <button type="button" class="btn btn-primary btn-sm" id="tripMenuTravelogueBtn">📝 旅行記生成</button>
         <div class="trip-menu-anime-gen-row">
+          <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeCharBtn" ${hasLink ? '' : 'disabled'} title="メインキャラの人物写真を設定">キャラ</button>
           <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeBtn" ${hasLink ? '' : 'disabled'} title="${hasLink ? '旅行記から表紙・1/4〜4/4ページのアニメを生成' : '旅行記生成してから利用できます'}">🎬 旅行アニメ生成</button>
           <select id="tripMenuAnimeTypeSelect" title="生成する種類を選択">
             <option value="cover">表紙</option>
@@ -3750,8 +3840,9 @@ async function renderTripMenu() {
   if (travelogueLinkBtn) {
     travelogueLinkBtn.onclick = async (e) => {
       e.preventDefault();
-      let htmlContent = (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent) ? _lastTravelogueHtmlContent : null;
-      if (!htmlContent) htmlContent = await loadTravelogueHtmlFromDB(tripId);
+      let htmlContent = embeddedTravelogue ||
+        ((_lastTravelogueTripId === tripId || _lastTravelogueTripId === rawTripId) ? _lastTravelogueHtmlContent : null);
+      if (!htmlContent) htmlContent = await loadTravelogueHtmlFromDB(rawTripId);
       if (htmlContent) {
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const blobUrl = URL.createObjectURL(blob);
@@ -3764,6 +3855,10 @@ async function renderTripMenu() {
   }
   const travelogueBtn = document.getElementById('tripMenuTravelogueBtn');
   if (travelogueBtn) travelogueBtn.onclick = () => generateTraveloguePdf();
+  const animeCharBtn = document.getElementById('tripMenuAnimeCharBtn');
+  if (animeCharBtn && hasLink) {
+    animeCharBtn.onclick = () => openCharacterUploadModal(rawTripId);
+  }
   const animeBtn = document.getElementById('tripMenuAnimeBtn');
   const animeTypeSelect = document.getElementById('tripMenuAnimeTypeSelect');
   if (animeBtn && hasLink && animeTypeSelect) {
@@ -3773,7 +3868,7 @@ async function renderTripMenu() {
       else generateTravelAnimePage(tripId, type);
     };
   }
-  getAnimeAllForTripDisplay(tripId).then(async (allItems) => {
+  getAnimeAllForTripDisplay(rawTripId, currentTrip?.animeList).then(async (allItems) => {
     const wrap = document.getElementById('tripMenuAnimeAll');
     if (!wrap || allItems.length === 0) return;
     wrap.innerHTML = '';
@@ -3798,7 +3893,12 @@ async function renderTripMenu() {
       img.alt = a.tripName || a._displayLabel || '';
       thumb.appendChild(img);
       const allIds = allItems.map(x => x.id);
-      thumb.onclick = () => openAnimeFromData(a.id, { animeIds: allIds, currentIndex: i });
+      const embeddedAnime = currentTrip?.animeList;
+      thumb.onclick = () => openAnimeFromData(a.id, {
+        animeIds: allIds,
+        currentIndex: i,
+        animeList: embeddedAnime || undefined
+      });
       const overlay = document.createElement('div');
       overlay.className = 'trip-menu-anime-all-overlay';
       const orderSpan = document.createElement('span');
@@ -4153,10 +4253,15 @@ async function openDataFolderModal() {
 }
 
 async function openAnimeFromData(id, opts = {}) {
-  let { animeIds = [], currentIndex = 0 } = opts;
-  const anime = await loadAnimeFromDB(id);
+  let { animeIds = [], currentIndex = 0, animeList = null } = opts;
+  let anime = animeList?.find(a => a.id === id) ?? animeList?.[currentIndex] ?? null;
+  if (!anime) anime = await loadAnimeFromDB(id);
   if (!anime) return;
-  if (animeIds.length === 0 && anime.tripId) {
+  if (animeIds.length === 0 && animeList?.length) {
+    animeIds = animeList.map(a => a.id);
+    const idx = animeIds.indexOf(id);
+    currentIndex = idx >= 0 ? idx : 0;
+  } else if (animeIds.length === 0 && anime.tripId) {
     const items = await getAnimeAllForTripDisplay(anime.tripId);
     animeIds = items.map(a => a.id);
     const idx = animeIds.indexOf(id);
@@ -4273,9 +4378,20 @@ async function exportPublicTrips() {
     setStatus('公開に設定されたトリップがありません。「公開する」にチェックを入れて保存してください。', true);
     return;
   }
-  setStatus('エクスポート準備中（100MBに圧縮）…');
+  setStatus('エクスポート準備中（写真・旅行記・アニメを含めて100MBに圧縮）…');
   const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
-  const compressed = await compressTripsForExport(publicOnly, targetBytes);
+  let compressed = await compressTripsForExport(publicOnly, targetBytes);
+  for (let i = 0; i < compressed.length; i++) {
+    const t = compressed[i];
+    try {
+      const html = await loadTravelogueHtmlFromDB(t.id);
+      if (html) compressed[i] = { ...t, travelogueHtml: html };
+    } catch (_) {}
+    try {
+      const animeList = await getAnimeAllForTripDisplay(t.id);
+      if (animeList.length > 0) compressed[i] = { ...compressed[i], animeList };
+    } catch (_) {}
+  }
   const json = JSON.stringify(compressed, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
@@ -5048,6 +5164,27 @@ async function setup() {
     stampPhotoInput.onchange = e => {
       const f = e.target.files?.[0];
       if (f) handleStampPhotoUpload(f);
+    };
+  }
+  document.getElementById('characterUploadClose').onclick = () => document.getElementById('characterUploadModal').classList.remove('open');
+  document.getElementById('characterUploadModal').onclick = e => {
+    if (e.target.id === 'characterUploadModal') document.getElementById('characterUploadModal').classList.remove('open');
+  };
+  const characterUploadZone = document.getElementById('characterUploadZone');
+  const characterPhotoInput = document.getElementById('characterPhotoInput');
+  if (characterUploadZone && characterPhotoInput) {
+    characterUploadZone.onclick = () => characterPhotoInput.click();
+    characterUploadZone.ondragover = e => { e.preventDefault(); characterUploadZone.classList.add('dragover'); };
+    characterUploadZone.ondragleave = () => characterUploadZone.classList.remove('dragover');
+    characterUploadZone.ondrop = e => {
+      e.preventDefault();
+      characterUploadZone.classList.remove('dragover');
+      const files = e.dataTransfer?.files;
+      if (files?.length) handleCharacterPhotoUpload([...files]);
+    };
+    characterPhotoInput.onchange = e => {
+      const files = e.target.files;
+      if (files?.length) handleCharacterPhotoUpload([...files]);
     };
   }
 

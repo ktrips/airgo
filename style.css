@@ -1471,6 +1471,70 @@ select {
   min-height: 60px;
 }
 
+.character-upload-modal .character-upload-hint {
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.character-upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.character-upload-zone:hover,
+.character-upload-zone.dragover {
+  border-color: var(--accent);
+  background: rgba(225, 48, 108, 0.05);
+}
+.character-upload-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+.character-upload-preview {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.character-preview-item {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+}
+.character-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.character-preview-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.character-preview-remove:hover {
+  background: var(--accent);
+}
+
 /* プレイモード：地図は通常表示、サムネイル非表示 */
 .play-mode-stop-btn {
   display: none;
@@ -2499,6 +2563,9 @@ select {
 
   /* ヘッダー：独立した細いバー・トリップ名（写真枚数）、前へ、次へ、再生、停止のみ */
   .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
     flex-wrap: nowrap;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
@@ -2627,7 +2694,7 @@ select {
     border-top: none;
     background: rgba(26, 26, 26, 0.98);
     flex-shrink: 0;
-    transition: max-height 0.3s ease;
+    transition: max-height 0.35s cubic-bezier(0.32, 0.72, 0, 1);
     padding-bottom: env(safe-area-inset-bottom);
   }
   .public-trips-panel .trip-panel-trip-list {
