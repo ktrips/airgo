@@ -1,6 +1,7 @@
 /* === Airgo — Instagram風テーマ === */
 
 :root {
+  --anime-display-width: 360px;
   --bg: #fafafa;
   --bg-card: #ffffff;
   --bg-hover: #f0f0f0;
@@ -254,6 +255,66 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 1rem;
+}
+.desktop-only {
+  display: block;
+}
+.menu-mobile-trip-nav {
+  display: none;
+}
+.menu-mobile-trip-list-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+.menu-mobile-trip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 0.75rem;
+}
+.menu-mobile-trip-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+  padding: 0.5rem 0;
+}
+.menu-mobile-trip-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: border-color 0.2s, background 0.2s;
+}
+.menu-mobile-trip-card:hover,
+.menu-mobile-trip-card:active {
+  border-color: var(--accent);
+  background: rgba(225, 48, 108, 0.08);
+}
+.menu-mobile-trip-thumb {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.menu-mobile-trip-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .menu-section {
   margin-bottom: 1.25rem;
@@ -618,8 +679,26 @@ body {
   overflow-y: auto;
 }
 
+.anime-modal .modal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.anime-modal .modal-header h2 {
+  flex: 0 0 auto;
+}
+.anime-modal-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.anime-modal .modal-close {
+  flex-shrink: 0;
+}
 .anime-modal .modal-body {
-  max-height: 80vh;
+  max-height: 95vh;
   overflow-y: auto;
 }
 .anime-modal-content {
@@ -653,8 +732,7 @@ body {
 }
 .anime-cover-thumb img {
   display: block;
-  max-width: 100%;
-  max-height: 60vh;
+  max-width: var(--anime-display-width);
   width: auto;
   height: auto;
 }
@@ -682,7 +760,7 @@ body {
   flex-direction: column;
   gap: 1rem;
   align-items: center;
-  max-height: 85vh;
+  max-height: 95vh;
   overflow-y: auto;
 }
 .anime-comic-page {
@@ -695,7 +773,7 @@ body {
   display: block;
   width: 100%;
   height: auto;
-  max-width: 800px;
+  max-width: var(--anime-display-width);
   margin: 0 auto;
 }
 .anime-comic-grid {
@@ -713,7 +791,9 @@ body {
 .anime-comic-panel img {
   width: 100%;
   height: auto;
+  max-width: var(--anime-display-width);
   display: block;
+  margin: 0 auto;
 }
 .anime-comic-speech {
   padding: 0.6rem 0.8rem;
@@ -784,7 +864,7 @@ body {
 }
 .data-folder-anime-thumb {
   width: 100%;
-  height: 80px;
+  aspect-ratio: 9 / 16;
   object-fit: cover;
   border-radius: 4px;
   margin-bottom: 0.4rem;
@@ -1499,6 +1579,31 @@ select {
   }
 }
 @media (max-width: 768px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .menu-mobile-trip-nav {
+    display: block;
+    margin-bottom: 0.75rem;
+  }
+  .menu-mobile-trip-list-title {
+    color: rgba(255, 255, 255, 0.95);
+  }
+  .menu-mobile-trip-card {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .menu-mobile-trip-card:hover,
+  .menu-mobile-trip-card:active {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--accent);
+  }
+  .menu-mobile-trip-name {
+    color: #fff;
+  }
+  .menu-mobile-trip-empty {
+    color: rgba(255, 255, 255, 0.7);
+  }
   .panel-header-desktop {
     display: none !important;
   }
@@ -1529,11 +1634,208 @@ select {
   flex-direction: column;
   gap: 0.75rem;
 }
+.trip-menu-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.trip-menu-nav-arrow {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.trip-menu-nav-arrow:hover:not(:disabled) {
+  opacity: 0.8;
+}
+.trip-menu-nav-arrow:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.trip-menu-title-wrap {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.trip-menu-nav-row .trip-menu-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.trip-menu-nav-row-bottom {
+  margin-top: 1rem;
+  margin-bottom: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+.trip-menu-nav-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.trip-menu-header {
+  margin-bottom: 0.25rem;
+}
+.trip-menu-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.35rem;
+  line-height: 1.4;
+}
 .trip-menu-name {
   font-size: 1rem;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 0.25rem;
+}
+.trip-menu-summary-section,
+.trip-menu-map-section {
+  margin: 0.5rem 0;
+}
+.trip-menu-summary-section .trip-menu-section-title,
+.trip-menu-map-section .trip-menu-section-title,
+.trip-menu-stamps .trip-menu-section-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+.trip-menu-summary-links-row {
+  margin-bottom: 0.75rem;
+}
+.trip-menu-summary-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+.trip-menu-anime-all-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.trip-menu-anime-all-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding: 0.25rem 0;
+}
+.trip-menu-anime-all-item {
+  flex-shrink: 0;
+  position: relative;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s;
+}
+.trip-menu-anime-all-item.drag-over {
+  border-color: var(--accent);
+  background: rgba(225, 48, 108, 0.08);
+}
+.trip-menu-anime-all-item[draggable] {
+  cursor: grab;
+}
+.trip-menu-anime-all-item[draggable]:active {
+  cursor: grabbing;
+}
+.trip-menu-anime-all-thumb {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  position: relative;
+}
+.trip-menu-anime-all-thumb:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+.trip-menu-anime-all-thumb img {
+  display: block;
+  max-width: 90px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.trip-menu-anime-all-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.15rem 0.25rem;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  color: #fff;
+  font-size: 0.65rem;
+  pointer-events: none;
+}
+.trip-menu-anime-all-overlay .trip-menu-anime-all-del {
+  pointer-events: auto;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.6rem;
+  border: none;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.9);
+  color: #333;
+  cursor: pointer;
+}
+.trip-menu-anime-all-overlay .trip-menu-anime-all-del:hover {
+  background: #fff;
+  color: var(--accent);
+}
+.trip-menu-summary-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.trip-menu-summary-btns {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.trip-menu-summary-btns .trip-menu-travelogue-summary-btn {
+  white-space: nowrap;
+}
+.trip-menu-summary-controls {
+  margin: 0;
+}
+.trip-menu-editor-row {
+  margin-top: 0.5rem;
+}
+.trip-menu-anime-gen-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.trip-menu-anime-gen-row select {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 .trip-menu-section {
   margin-bottom: 0.25rem;
@@ -1587,8 +1889,7 @@ select {
   margin-top: 0.25rem;
 }
 .trip-menu-travelogue-summary {
-  margin-top: 0.75rem;
-  margin-bottom: 0.25rem;
+  margin: 0;
 }
 .trip-menu-travelogue-summary-btn {
   display: inline-block;
@@ -1634,32 +1935,10 @@ select {
   color: var(--text-muted);
   font-weight: normal;
 }
-.trip-menu-anime-thumb-wrap {
-  margin-top: 0.5rem;
-}
-.trip-menu-anime-thumb-wrap:empty {
-  display: none;
-}
-.trip-menu-anime-thumb {
-  display: block;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-.trip-menu-anime-thumb:hover {
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-.trip-menu-anime-thumb img {
-  display: block;
-  width: 100%;
-  max-width: 200px;
-  height: auto;
+.trip-menu-anime-all-wrap:empty {
+  min-height: 70px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: var(--radius);
 }
 .trip-menu-controls select {
   padding: 0.35rem 0.5rem;
@@ -1720,7 +1999,7 @@ select {
   text-align: left;
 }
 .trip-menu-meta {
-  font-size: 0.85em;
+  font-size: 0.75em;
   color: var(--text-muted);
 }
 .trip-menu-stamps-title {
@@ -1731,7 +2010,7 @@ select {
 }
 .trip-menu-stamps-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.4rem;
 }
 .trip-menu-stamp-card {
@@ -1783,6 +2062,7 @@ select {
   text-align: center;
   word-break: break-all;
   line-height: 1.2;
+  cursor: pointer;
 }
 .trip-menu-stamp-check {
   position: absolute;
@@ -1799,6 +2079,7 @@ select {
   font-weight: 700;
   border-radius: 50%;
   border: 2px solid #fff;
+  cursor: pointer;
 }
 .trip-menu-marker span {
   display: block;
@@ -2363,9 +2644,26 @@ select {
     max-height: 60dvh;
   }
   /* トリップメニュー内テキスト：黒背景で見やすく */
+  .public-trips-panel .trip-menu-nav-row {
+    border-bottom-color: rgba(255, 255, 255, 0.3);
+  }
+  .public-trips-panel .trip-menu-nav-arrow {
+    background: none;
+    color: #fff;
+  }
+  .public-trips-panel .trip-menu-nav-row-bottom {
+    border-top-color: rgba(255, 255, 255, 0.3);
+  }
+  .public-trips-panel .trip-menu-nav-label {
+    color: #fff;
+  }
+  .public-trips-panel .trip-menu-title,
   .public-trips-panel .trip-menu-name,
   .public-trips-panel .trip-menu-photo-count {
     color: #fff;
+  }
+  .public-trips-panel .trip-menu-meta {
+    color: rgba(255, 255, 255, 0.8);
   }
   .public-trips-panel .trip-menu-section-title {
     color: rgba(255, 255, 255, 0.95);
@@ -2374,7 +2672,10 @@ select {
   .public-trips-panel .trip-menu-meta {
     color: #fff;
   }
-  .public-trips-panel .trip-menu-stamps-title {
+  .public-trips-panel .trip-menu-stamps-title,
+  .public-trips-panel .trip-menu-summary-section .trip-menu-section-title,
+  .public-trips-panel .trip-menu-map-section .trip-menu-section-title,
+  .public-trips-panel .trip-menu-stamps .trip-menu-section-title {
     color: #fff;
   }
   .public-trips-panel .trip-menu-controls .btn {

@@ -41,7 +41,17 @@ jobs:
               echo "⚠ data/public-trips.json がなかったため空の配列を作成しました"
             fi
           fi
-          echo "data/public-trips.json: $(wc -c < data/public-trips.json) bytes"
+          SIZE=$(wc -c < data/public-trips.json)
+          echo "data/public-trips.json: $SIZE bytes"
+          if [[ "$SIZE" -lt 10 ]]; then
+            echo "::warning::data/public-trips.json が空です。リポジトリに data/public-trips.json をコミットするか、📤 公開トリップをエクスポートして配置してください。"
+          fi
+
+      - name: Verify build context includes data
+        run: |
+          echo "ビルドに含まれる data/ の内容:"
+          ls -la data/ || true
+          test -f data/public-trips.json && echo "✔ data/public-trips.json がビルドに含まれます" || (echo "::error::data/public-trips.json が見つかりません"; exit 1)
 
       - name: Install gcloud and authenticate
         env:
@@ -136,3 +146,16 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Cloud Run URL:** $URL" >> $GITHUB_STEP_SUMMARY
           echo "- **Custom domain:** https://${{ env.DOMAIN }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify public-trips.json is accessible
+        continue-on-error: true
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)' | sed 's|/$||')
+          echo "Checking $URL/data/public-trips.json ..."
+          if curl -sf -o /tmp/pt.json "$URL/data/public-trips.json"; then
+            echo "✔ data/public-trips.json にアクセスできました"
+            TRIP_COUNT=$(python3 -c "import json; d=json.load(open('/tmp/pt.json')); print(len(d) if isinstance(d,list) else len(d.get('trips',[])))" 2>/dev/null || echo "?")
+            echo "  公開トリップ数: $TRIP_COUNT"
+          else
+            echo "::warning::デプロイ直後の確認で data/public-trips.json にアクセスできませんでした。数分後に https://${{ env.DOMAIN }}/data/public-trips.json を確認してください。"
+          fi

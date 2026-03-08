@@ -1,3 +1,4 @@
+# 注: data/ は除外しない（public-trips.json をデプロイに含める）
 .git
 .gitignore
 *.md
