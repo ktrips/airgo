@@ -22,7 +22,7 @@
             <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="photoNextBtnHeader">次へ</button>
           </span>
           <span class="header-controls-sep" id="headerControlsSep" style="display:none">|</span>
-          <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled>▶ 再生</button>
+          <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled>▶ 自動再生</button>
           <button type="button" class="btn btn-secondary btn-sm stop-btn" id="stopBtn" disabled>停止</button>
           <select id="intervalSelect">
             <option value="1">1秒</option>
@@ -54,7 +54,7 @@
         <section class="menu-section menu-mobile-controls" id="menuMobileControls">
           <h3>操作</h3>
           <div class="menu-row">
-            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled>▶ 再生</button>
+            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled>▶ 自動再生</button>
             <button type="button" class="btn btn-secondary btn-sm stop-btn" id="menuStopBtn" disabled>停止</button>
           </div>
           <div class="menu-row">
@@ -251,6 +251,7 @@
       <button type="button" class="play-mode-stop-btn" id="playModeStopBtn" aria-label="停止" title="再生を停止">■ 停止</button>
       <div class="map-container">
         <div id="map"></div>
+        <div class="map-trip-name-overlay" id="mapTripNameOverlay"></div>
         <div class="play-photo-overlay" id="playPhotoOverlay">
           <div class="play-overlay-buttons">
             <button type="button" class="play-overlay-edit editor-only" id="playOverlayEdit" aria-label="詳細設定" title="詳細設定（ランドマーク・説明・URL）">✎</button>
@@ -271,18 +272,16 @@
       <aside class="public-trips-panel" id="publicTripsPanel">
         <div class="panel-header panel-header-desktop" id="panelHeaderDesktop">
           <h1 class="panel-header-title panel-header-title-link" id="panelHeaderTitle" title="ホームに戻る">AirGo</h1>
+          <a href="#publicTripsList" class="panel-header-trip-list-link" id="panelHeaderTripList" title="Trip Listに戻る">Trip List</a>
           <button type="button" class="hamburger-btn" id="panelHamburgerBtn" aria-label="メニュー">
             <span></span><span></span><span></span>
           </button>
         </div>
         <div class="trip-panel-drag-handle" id="tripPanelDragHandle" title="タップまたはピンチで展開" aria-label="パネルを展開"></div>
         <div class="trip-panel-trip-list" id="tripPanelTripList">
-          <h3 class="public-trips-title">公開トリップ一覧</h3>
           <div class="public-trips-list" id="publicTripsList"></div>
         </div>
         <div class="trip-panel-trip-menu" id="tripPanelTripMenu" style="display:none">
-          <a href="#" class="trip-menu-back" id="tripMenuBack">公開トリップ一覧</a>
-          <h3 class="trip-menu-title" id="tripMenuTitle"></h3>
           <div class="trip-menu-content" id="tripMenuContent"></div>
         </div>
       </aside>
@@ -306,6 +305,14 @@
     </div>
     <div class="trip-list-body" id="tripListBody"></div>
   </aside>
+
+  <!-- フルサイズ写真ビューア -->
+  <div class="full-photo-overlay" id="fullPhotoOverlay" role="dialog" aria-modal="true" aria-label="写真を大きく表示">
+    <button type="button" class="full-photo-close" id="fullPhotoClose" aria-label="閉じる">&times;</button>
+    <div class="full-photo-content">
+      <img src="" alt="" id="fullPhotoImg">
+    </div>
+  </div>
 
   <!-- スタンプラリー写真アップロードモーダル -->
   <div class="modal-overlay" id="stampUploadModal">
@@ -360,6 +367,10 @@
         <div class="data-folder-section">
           <h3>旅行アニメ</h3>
           <div id="dataFolderAnimeList" class="data-folder-list data-folder-anime-grid"></div>
+          <div id="dataFolderHiddenAnimeSection" class="data-folder-hidden-section" style="display:none">
+            <h4 class="data-folder-hidden-title">非表示のアニメ</h4>
+            <div id="dataFolderHiddenAnimeList" class="data-folder-list data-folder-anime-grid"></div>
+          </div>
         </div>
       </div>
     </div>

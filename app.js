@@ -10,6 +10,8 @@ const AI_API_KEY_STORAGE_KEY = 'airgo_ai_api_key';
 const PUBLIC_TRIP_CONFIG_KEY = 'airgo_public_trip_config';
 const STAMP_PHOTOS_KEY = 'airgo_stamp_photos';
 const TRAVELOGUE_INFO_KEY = 'airgo_travelogue_info';
+const HIDDEN_ANIME_IDS_KEY = 'airgo_hidden_anime_ids';
+const POPUP_FEATURES = 'width=720,height=600,scrollbars=yes,resizable=yes';
 let _lastTravelogueHtmlUrl = null;
 let _lastTravelogueHtmlContent = null;
 let _lastTravelogueTripId = null;
@@ -40,6 +42,21 @@ function isEditor() {
 function setEditor(ok) {
   if (ok) sessionStorage.setItem(AUTH_STORAGE_KEY, '1');
   else sessionStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function getHiddenAnimeIds() {
+  try {
+    const raw = localStorage.getItem(HIDDEN_ANIME_IDS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch { return new Set(); }
+}
+
+function setAnimeHidden(id, hidden) {
+  const set = getHiddenAnimeIds();
+  if (hidden) set.add(id);
+  else set.delete(id);
+  localStorage.setItem(HIDDEN_ANIME_IDS_KEY, JSON.stringify([...set]));
 }
 
 function checkAuth(user, pass) {
@@ -277,7 +294,8 @@ async function listAnimeFromDB() {
 async function getAnimeByTripId(tripId) {
   if (!tripId) return null;
   const list = await listAnimeFromDB();
-  return list.find(a => a.tripId === tripId) || null;
+  const hidden = getHiddenAnimeIds();
+  return list.find(a => a.tripId === tripId && !hidden.has(a.id)) || null;
 }
 
 async function loadAnimeFromDB(id) {
@@ -420,8 +438,11 @@ async function reverseGeocode(lat, lng) {
 
 async function fetchPlaceNamesForPhotos() {
   const withGps = photos.filter(p => p.lat != null && p.lng != null && !p.placeName);
-  for (const p of withGps) {
-    p.placeName = await reverseGeocode(p.lat, p.lng);
+  const CONCURRENCY = 5;
+  for (let i = 0; i < withGps.length; i += CONCURRENCY) {
+    const batch = withGps.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(p => reverseGeocode(p.lat, p.lng)));
+    batch.forEach((p, j) => { p.placeName = results[j]; });
   }
 }
 
@@ -506,6 +527,7 @@ function formatSpeed(kmh) {
 
 function assignGpxDataToPhotos() {
   if (gpxTrackPoints.length === 0) return;
+  const CLOSE_ENOUGH_SQ = 1e-12;
   photos.forEach(p => {
     if (p.lat == null || p.lng == null) return;
     let best = null;
@@ -515,6 +537,7 @@ function assignGpxDataToPhotos() {
       if (d < bestDist) {
         bestDist = d;
         best = pt;
+        if (d < CLOSE_ENOUGH_SQ) break;
       }
     }
     if (best) {
@@ -673,7 +696,7 @@ function buildPhotoPopupHtml(photo, index) {
     ? `<div class="popup-url"><button type="button" class="popup-url-btn" data-url="${escapeHtml(photo.photoUrl)}">🔗 リンク</button></div>`
     : '';
   const imgHtml = photo.url
-    ? `<div class="popup-photo-img-wrap">${landmarkHtml}<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}" class="popup-photo-img"></div>`
+    ? `<div class="popup-photo-img-wrap popup-photo-clickable" data-photo-index="${index}" role="button" tabindex="0" title="クリックで大きく表示">${landmarkHtml}<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}" class="popup-photo-img"></div>`
     : '';
   const nameHtml = showName
     ? `<span class="popup-photo-name">${escapeHtml(photo.name)}</span>`
@@ -711,7 +734,7 @@ function addPhotoMarkers() {
     bounds = bounds ? bounds.extend(routeBounds) : routeBounds;
   }
   if (bounds) {
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    map.fitBounds(bounds, { padding: [150, 150], maxZoom: 16 });
   }
 
   if (withGps.length === 0) return;
@@ -731,7 +754,7 @@ function addPhotoMarkers() {
     const marker = L.marker([photo.lat, photo.lng], { icon })
       .addTo(map)
       .bindPopup(buildPhotoPopupHtml(photo, photoIndex), {
-        maxWidth: 280,
+        maxWidth: 339,
         className: 'photo-popup',
       })
       .on('click', () => showPhotoWithPopup(photoIndex));
@@ -816,7 +839,7 @@ function showPhoto(index, options = {}) {
   } else if (popupOnly && map && photo.url) {
     if (photoPopup) map.removeLayer(photoPopup);
     const center = map.getCenter();
-    photoPopup = L.popup({ maxWidth: 280, className: 'photo-popup' })
+    photoPopup = L.popup({ maxWidth: 339, className: 'photo-popup' })
       .setLatLng(center)
       .setContent(buildPhotoPopupHtml(photo, index))
       .openOn(map);
@@ -826,6 +849,45 @@ function showPhoto(index, options = {}) {
   if (strip) strip.querySelectorAll('.all-photo-thumb').forEach((t, i) => t.classList.toggle('active', i === index));
 
   updatePhotoNav();
+}
+
+let _fullPhotoBlobUrl = null;
+
+function showFullSizePhoto(index) {
+  const photo = photos[index];
+  if (!photo || !photo.url) return;
+  currentIndex = index;
+  if (photo.lat != null && photo.lng != null && map) {
+    map.setView([photo.lat, photo.lng], Math.max(map.getZoom(), 14));
+  }
+  const strip = document.getElementById('allPhotosStrip');
+  if (strip) strip.querySelectorAll('.all-photo-thumb').forEach((t, i) => t.classList.toggle('active', i === index));
+  updatePhotoNav();
+  if (_fullPhotoBlobUrl) {
+    URL.revokeObjectURL(_fullPhotoBlobUrl);
+    _fullPhotoBlobUrl = null;
+  }
+  const imgUrl = photo.file ? (_fullPhotoBlobUrl = URL.createObjectURL(photo.file)) : photo.url;
+  const overlay = document.getElementById('fullPhotoOverlay');
+  const img = document.getElementById('fullPhotoImg');
+  if (overlay && img) {
+    img.src = imgUrl;
+    img.alt = photo.name || '';
+    overlay.classList.add('visible');
+  }
+}
+
+function closeFullSizePhoto() {
+  if (_fullPhotoBlobUrl) {
+    URL.revokeObjectURL(_fullPhotoBlobUrl);
+    _fullPhotoBlobUrl = null;
+  }
+  const overlay = document.getElementById('fullPhotoOverlay');
+  const img = document.getElementById('fullPhotoImg');
+  if (overlay && img) {
+    overlay.classList.remove('visible');
+    img.src = '';
+  }
 }
 
 function setPlayStopDisabled(playDisabled, stopDisabled) {
@@ -875,9 +937,15 @@ function updatePhotoNav() {
 function fitMapToFullExtent() {
   if (!map) return;
   const withGps = photos.filter(p => p.lat != null && p.lng != null);
-  if (withGps.length === 0) return;
-  const bounds = L.latLngBounds(withGps.map(p => [p.lat, p.lng]));
-  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+  const routePoints = getGpxRoutePoints();
+  let bounds = null;
+  if (withGps.length > 0) bounds = L.latLngBounds(withGps.map(p => [p.lat, p.lng]));
+  if (routePoints.length >= 2) {
+    const routeBounds = L.latLngBounds(routePoints);
+    bounds = bounds ? bounds.extend(routeBounds) : routeBounds;
+  }
+  if (!bounds) return;
+  map.fitBounds(bounds, { padding: [150, 150], maxZoom: 16 });
 }
 
 function movePhoto(fromIdx, toIdx) {
@@ -960,14 +1028,22 @@ function startPlay() {
   let idx = 1;
   function tick() {
     if (!isPlaying) return;
-    const photoIdx = indices[idx % indices.length];
+    if (idx >= indices.length) {
+      stopPlay();
+      return;
+    }
+    const photoIdx = indices[idx];
     const photo = photos[photoIdx];
     showPhotoWith3D(photoIdx);
     if (photo && photo.lat != null && photo.lng != null) {
       map.flyTo([photo.lat, photo.lng], 18, { duration: 1.2, easeLinearity: 0.15 });
     }
-    idx = (idx + 1) % indices.length;
-    playTimer = setTimeout(tick, interval);
+    idx += 1;
+    if (idx < indices.length) {
+      playTimer = setTimeout(tick, interval);
+    } else {
+      stopPlay();
+    }
   }
   showPhotoWith3D(indices[0]);
   if (photos[indices[0]]?.lat != null) {
@@ -989,6 +1065,7 @@ function renderAllPhotosStrip() {
   if (!strip) return;
   strip.innerHTML = '';
   const canEdit = isEditor();
+  const fragment = document.createDocumentFragment();
   photos.forEach((photo, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'all-photo-thumb-wrap';
@@ -998,11 +1075,11 @@ function renderAllPhotosStrip() {
     const img = document.createElement('img');
     img.src = photo.url || '';
     img.alt = photo.name;
+    img.loading = 'lazy';
     div.appendChild(img);
     div.onclick = (e) => {
       if (!e.target.closest('.all-photo-thumb-actions')) {
-        showPhotoWithPopup(i);
-        strip.querySelectorAll('.all-photo-thumb').forEach((t, j) => t.classList.toggle('active', j === i));
+        showFullSizePhoto(i);
       }
     };
     wrap.appendChild(div);
@@ -1039,8 +1116,9 @@ function renderAllPhotosStrip() {
       actions.appendChild(del);
       wrap.appendChild(actions);
     }
-    strip.appendChild(wrap);
+    fragment.appendChild(wrap);
   });
+  strip.appendChild(fragment);
 }
 
 function isMobileView() {
@@ -1517,6 +1595,7 @@ Style: Jump anime style (少年ジャンプ風), vibrant colors, dynamic composi
     }
     setStatus('旅行アニメを生成しました');
     await renderTripMenu();
+    await renderPublicTripsPanel();
   } catch (err) {
     setStatus(err.message || '旅行アニメの生成に失敗しました', true);
     if (contentEl) contentEl.innerHTML = `<p class="anime-error">${escapeHtml(err.message || '生成に失敗しました')}</p>`;
@@ -1559,38 +1638,107 @@ function getRoutePointsForMap() {
   return routePoints.length >= 2 ? routePoints : withGps.map(p => [p.lat, p.lng]);
 }
 
+/** Wikipedia から簡単なサマリーを取得（名所旧跡・観光地など） */
+async function fetchWikipediaSummary(term) {
+  if (!term || typeof term !== 'string') return null;
+  const q = term.trim().slice(0, 50);
+  if (!q) return null;
+  try {
+    const searchRes = await fetch(
+      `https://ja.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*&utf8=1`
+    );
+    const searchData = await searchRes.json();
+    const hits = searchData?.query?.search;
+    if (!hits || hits.length === 0) return null;
+    const title = hits[0].title;
+    const extractRes = await fetch(
+      `https://ja.wikipedia.org/w/api.php?action=query&format=json&origin=*&titles=${encodeURIComponent(title)}&prop=extracts&exintro&explaintext&exsentences=4`
+    );
+    const extractData = await extractRes.json();
+    const pages = extractData?.query?.pages;
+    if (!pages) return null;
+    const pageId = Object.keys(pages)[0];
+    const extract = pages[pageId]?.extract;
+    return (extract && typeof extract === 'string') ? extract.trim().slice(0, 400) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /** 旅行記 Web ページの HTML を生成（PDF 生成用データを埋め込み） */
 async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoints) {
   const hasPoints = routePoints && routePoints.length >= 1;
-  const photoItems = photos.slice(0, 20).map((p, i) => {
+  const landmarkKey = (p) => {
+    const no = toLandmarkValue(p.landmarkNo);
+    const nm = toLandmarkValue(p.landmarkName);
+    return [no, nm].filter(Boolean).join(' ') || '_other';
+  };
+
+  const wikipediaCache = new Map();
+  const getWikipedia = async (name) => {
+    if (!name || name === '_other') return null;
+    if (wikipediaCache.has(name)) return wikipediaCache.get(name);
+    const summary = await fetchWikipediaSummary(name);
+    wikipediaCache.set(name, summary);
+    return summary;
+  };
+
+  // 写真の表示順をキープしつつ、ランドマークが変わるタイミングでセクション分け
+  const sections = [];
+  let currentSection = null;
+  let currentKey = null;
+
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
     const imgSrc = p.data ? `data:${p.mime || 'image/jpeg'};base64,${p.data}` : '';
+    if (!imgSrc) continue;
+
+    const key = landmarkKey(p);
+    const sectionTitle = key === '_other' ? 'その他' : [p.landmarkNo, p.landmarkName].filter(Boolean).join(' ');
     const placeName = p.placeName || p.landmarkName || p.name || `写真${i + 1}`;
     const desc = parsed.placeTexts[i] || '';
-    return { imgSrc, placeName, desc };
-  }).filter(x => x.imgSrc);
 
-  const photoData = [];
-  for (let i = 0; i < Math.min(photos.length, 12); i++) {
-    const p = photos[i];
-    if (!p.data) continue;
-    try {
-      const enc = await resizeBase64ToBase64(p.mime, p.data, 400, 300, 0.8);
-      if (enc) photoData.push({
-        mime: enc.mime || 'image/jpeg',
-        data: enc.data,
-        placeName: (p.placeName || p.landmarkName || p.name || `写真${i + 1}`).slice(0, 20),
-        placeDesc: (parsed.placeTexts[i] || '').slice(0, 200)
-      });
-    } catch (_) {}
+    if (key !== currentKey) {
+      currentKey = key;
+      const wikiSummary = p.landmarkName ? await getWikipedia(p.landmarkName) : null;
+      currentSection = { sectionTitle, wikiSummary, items: [] };
+      sections.push(currentSection);
+    }
+
+    currentSection.items.push({ imgSrc, placeName, desc, photo: p, index: i });
   }
+
+  const pdfSections = [];
+  for (const sec of sections) {
+    const photoData = [];
+    for (const item of sec.items.slice(0, 8)) {
+      const p = item.photo;
+      if (!p.data) continue;
+      try {
+        const enc = await resizeBase64ToBase64(p.mime, p.data, 400, 300, 0.8);
+        if (enc) photoData.push({
+          mime: enc.mime || 'image/jpeg',
+          data: enc.data,
+          placeName: (p.placeName || p.landmarkName || p.name || `写真`).slice(0, 25),
+          placeDesc: (parsed.placeTexts[item.index] || '').slice(0, 200)
+        });
+      } catch (_) {}
+    }
+    pdfSections.push({
+      sectionTitle: sec.sectionTitle === 'その他' ? '' : sec.sectionTitle,
+      wikiSummary: sec.wikiSummary || '',
+      photos: photoData
+    });
+  }
+
   const pdfData = {
     tripName,
     tripDesc: tripDesc || '',
     tripUrl: tripUrl || '',
     intro: parsed.intro || '',
     closing: parsed.closing || '',
-    placeTexts: parsed.placeTexts || [],
-    photos: photoData,
+    sections: pdfSections,
+    photos: pdfSections.flatMap(s => s.photos),
     route: hasPoints ? routePoints : []
   };
 
@@ -1598,14 +1746,22 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
   const pdfDataJson = JSON.stringify(pdfData)
     .replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
     .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-  const itemsHtml = photoItems.map(({ imgSrc, placeName, desc }) => `
-    <div class="travelogue-item">
-      <div class="travelogue-photo"><img src="${imgSrc}" alt="${escapeHtml(placeName)}"></div>
-      <div class="travelogue-text">
-        <h3>${escapeHtml(placeName)}</h3>
-        <p>${escapeHtml(desc).replace(/\n/g, '<br>')}</p>
-      </div>
-    </div>`).join('');
+
+  const sectionsHtml = sections.map(sec => {
+    const titleHtml = sec.sectionTitle === 'その他' ? '' : `<h2 class="travelogue-section-title">${escapeHtml(sec.sectionTitle)}</h2>`;
+    const wikiHtml = sec.wikiSummary
+      ? `<div class="travelogue-wikipedia"><p class="travelogue-wikipedia-label">出典: Wikipedia</p><p class="travelogue-wikipedia-summary">${escapeHtml(sec.wikiSummary).replace(/\n/g, '<br>')}</p></div>`
+      : '';
+    const itemsHtml = sec.items.map(({ imgSrc, placeName, desc }) => `
+      <div class="travelogue-item">
+        <div class="travelogue-photo"><img src="${imgSrc}" alt="${escapeHtml(placeName)}"></div>
+        <div class="travelogue-text">
+          <div class="travelogue-place">${escapeHtml(placeName)}</div>
+          <p>${escapeHtml(desc).replace(/\n/g, '<br>')}</p>
+        </div>
+      </div>`).join('');
+    return `<section class="travelogue-section">${titleHtml}${wikiHtml}<div class="travelogue-section-items">${itemsHtml}</div></section>`;
+  }).join('');
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -1623,11 +1779,15 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
     .travelogue-item { display: flex; gap: 1.5rem; margin: 2rem 0; align-items: flex-start; }
     .travelogue-photo { flex-shrink: 0; }
     .travelogue-photo img { max-width: 320px; width: 100%; height: auto; border-radius: 8px; display: block; }
-    .travelogue-text h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+    .travelogue-place { margin: 0 0 0.5rem; font-size: 0.8rem; color: #666; }
     .travelogue-text p { margin: 0; line-height: 1.7; }
-    .travelogue-actions { margin: 1rem 0; }
-    .travelogue-pdf-btn, .travelogue-anime-btn { padding: 0.5rem 1rem; font-size: 1rem; border: none; border-radius: 8px; cursor: pointer; margin-right: 0.5rem; }
-    .travelogue-pdf-btn { background: #e1306c; color: #fff; }
+    .travelogue-section { margin: 2.5rem 0; padding-top: 1.5rem; border-top: 1px solid #eee; }
+    .travelogue-section-title { font-size: 1.25rem; margin: 0 0 1rem; color: #e1306c; }
+    .travelogue-wikipedia { margin: 1rem 0; padding: 1rem; background: #f8f8f8; border-radius: 8px; border-left: 4px solid #36c; }
+    .travelogue-wikipedia-label { font-size: 0.75rem; color: #666; margin: 0 0 0.5rem; }
+    .travelogue-wikipedia-summary { margin: 0; font-size: 0.9rem; line-height: 1.7; }
+    .travelogue-actions { margin: 2rem 0 1rem; }
+    .travelogue-pdf-btn { padding: 0.6rem 1.5rem; font-size: 1.1rem; border: none; border-radius: 8px; cursor: pointer; background: #e1306c; color: #fff; }
     .travelogue-pdf-btn:hover { background: #c41e5a; }
     .travelogue-pdf-btn:disabled { opacity: 0.6; cursor: not-allowed; }
     @media (max-width: 600px) { .travelogue-item { flex-direction: column; } }
@@ -1635,16 +1795,16 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
 </head>
 <body>
   <h1>${escapeHtml(tripName)} 旅行記</h1>
-  <p class="travelogue-actions">
-    <button type="button" id="pdfDownloadBtn" class="travelogue-pdf-btn">📄 PDFでダウンロード</button>
-  </p>
   <div id="travelogue-pdf-content">
   ${tripDesc ? `<p class="travelogue-intro">${escapeHtml(tripDesc).replace(/\n/g, '<br>')}</p>` : ''}
   ${parsed.intro ? `<div class="travelogue-intro">${parsed.intro.replace(/\n/g, '<br>')}</div>` : ''}
   ${hasPoints ? '<div id="map"></div>' : ''}
-  <div class="travelogue-content">${itemsHtml}</div>
+  <div class="travelogue-content">${sectionsHtml}</div>
   ${parsed.closing ? `<div class="travelogue-closing">${parsed.closing.replace(/\n/g, '<br>')}</div>` : ''}
-  ${tripUrl ? `<p><a href="${escapeHtml(tripUrl)}" target="_blank" rel="noopener">詳細リンク</a></p>` : ''}
+  ${tripUrl ? `<p><a href="${escapeHtml(tripUrl)}" target="_blank" rel="noopener">旅ブログ</a></p>` : ''}
+  <p class="travelogue-actions">
+    <button type="button" id="pdfDownloadBtn" class="travelogue-pdf-btn">📄 PDFでダウンロード</button>
+  </p>
   </div>
   ${hasPoints ? `<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""><\/script>
   <script>
@@ -1687,14 +1847,25 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
               if (!txt) return;
               var c = document.createElement('canvas');
               var ctx = c.getContext('2d');
-              ctx.font = fs + 'px sans-serif';
+              ctx.font = fs + 'px "Hiragino Sans","Noto Sans JP",Meiryo,sans-serif';
               var w = contentW * 3.78;
               var lines = [];
               var words = txt.split(/\\s+|\\n/);
               var line = '';
               for (var i = 0; i < words.length; i++) {
-                var test = line + words[i];
-                if (ctx.measureText(test).width > w && line) { lines.push(line); line = words[i]; }
+                var word = words[i];
+                if (ctx.measureText(word).width > w) {
+                  if (line) { lines.push(line); line = ''; }
+                  for (var j = 0; j < word.length; j++) {
+                    var ch = word[j];
+                    var t = line + ch;
+                    if (ctx.measureText(t).width > w && line) { lines.push(line); line = ch; }
+                    else line = t;
+                  }
+                  continue;
+                }
+                var test = line ? line + ' ' + word : word;
+                if (ctx.measureText(test).width > w && line) { lines.push(line); line = word; }
                 else line = test;
               }
               if (line) lines.push(line);
@@ -1704,7 +1875,7 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
               ctx.fillStyle = '#fff';
               ctx.fillRect(0,0,c.width,c.height);
               ctx.fillStyle = '#333';
-              ctx.font = fs + 'px sans-serif';
+              ctx.font = fs + 'px "Hiragino Sans","Noto Sans JP",Meiryo,sans-serif';
               lines.forEach(function(l,i){ ctx.fillText(l||' ',8,8+i*fs*1.4); });
               var imgH = Math.min(h/3.78, pageH - 20);
               if (y + imgH > pageH - margin) { doc.addPage(); y = margin; }
@@ -1742,16 +1913,30 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
             } else addPhotos();
             function addPhotos(){
               var photoW = 55, photoH = photoW * 0.75;
-              for (var i = 0; i < (pdfData.photos||[]).length; i++) {
-                var p = pdfData.photos[i];
-                if (y + photoH + 20 > pageH - margin) { doc.addPage(); y = margin; }
-                try {
-                  doc.addImage('data:'+(p.mime||'image/jpeg')+';base64,'+p.data,'JPEG',margin,y,photoW,photoH);
-                  var txt = ((p.placeName||'') + '\\n\\n' + (p.placeDesc||'')).slice(0, 250);
-                  if (txt) addText(txt, 9);
-                  else y += 5;
-                } catch(e){}
-                y += Math.max(photoH, 25) + 8;
+              var sections = pdfData.sections || (pdfData.photos ? [{ sectionTitle: '', wikiSummary: '', photos: pdfData.photos }] : []);
+              for (var s = 0; s < sections.length; s++) {
+                var sec = sections[s];
+                if (sec.sectionTitle) {
+                  if (y + 15 > pageH - margin) { doc.addPage(); y = margin; }
+                  addText(sec.sectionTitle, 14);
+                  y += 5;
+                }
+                if (sec.wikiSummary) {
+                  if (y + 20 > pageH - margin) { doc.addPage(); y = margin; }
+                  addText(sec.wikiSummary, 8);
+                  y += 5;
+                }
+                for (var i = 0; i < (sec.photos||[]).length; i++) {
+                  var p = sec.photos[i];
+                  if (y + photoH + 20 > pageH - margin) { doc.addPage(); y = margin; }
+                  try {
+                    doc.addImage('data:'+(p.mime||'image/jpeg')+';base64,'+p.data,'JPEG',margin,y,photoW,photoH);
+                    var txt = ((p.placeName||'') + '\\n\\n' + (p.placeDesc||'')).slice(0, 250);
+                    if (txt) addText(txt, 9);
+                    else y += 5;
+                  } catch(e){}
+                  y += Math.max(photoH, 25) + 8;
+                }
               }
               if (pdfData.closing) addText(pdfData.closing, 10);
               var fn = (pdfData.tripName || 'travelogue').replace(/[^\\w\\u3040-\\u309f\\u30a0-\\u30ff\\u4e00-\\u9faf\\-]/g,'_').slice(0,50) + '_旅行記.pdf';
@@ -1819,7 +2004,7 @@ async function generateTraveloguePdf() {
     return;
   }
 
-  setStatus('旅行記を生成中…');
+  setStatus('旅行記を生成中…（Wikipedia参照を取得）');
 
   const parsed = parseTravelogueText(travelogueText);
   const routePoints = getRoutePointsForMap();
@@ -1839,13 +2024,12 @@ async function generateTraveloguePdf() {
     if (tripId) setTravelogueInfo(tripId, { dateStr });
     if (tripId) saveTravelogueHtmlToDB(tripId, htmlContent, tripName).catch(() => {});
     const infoEl = document.getElementById('tripMenuTravelogueInfo');
-    const linkLabel = `${tripName || '旅行記'}旅行記`;
     if (infoEl) {
-      infoEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn">${escapeHtml(linkLabel)}</button> <span class="trip-menu-travelogue-date">（${escapeHtml(dateStr)}）</span>`;
+      infoEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記まとめ</button>`;
       const btn = infoEl.querySelector('button.trip-menu-travelogue-link-btn');
       if (btn) btn.onclick = () => {
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-        window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer');
+        window.open(URL.createObjectURL(blob), '_blank', POPUP_FEATURES);
       };
     }
     setStatus('旅行記 Web ページを開きました（ページ内のボタンで PDF ダウンロード）');
@@ -1981,8 +2165,7 @@ async function autoSaveTrip() {
   const name = document.getElementById('tripNameInput')?.value?.trim();
   if (!name || photos.length === 0) return;
 
-  const storedPhotos = [];
-  for (const p of photos) {
+  const storedPhotos = (await Promise.all(photos.map(async (p) => {
     let data = null;
     let mime = 'image/jpeg';
     if (p.file) {
@@ -1992,21 +2175,20 @@ async function autoSaveTrip() {
       data = p.data;
       mime = p.mime || 'image/jpeg';
     }
-    if (data) {
-      storedPhotos.push({
-        name: p.name,
-        lat: p.lat,
-        lng: p.lng,
-        placeName: p.placeName || null,
-        landmarkNo: toLandmarkValue(p.landmarkNo),
-        landmarkName: toLandmarkValue(p.landmarkName),
-        description: p.description || null,
-        url: p.photoUrl || null,
-        data,
-        mime,
-      });
-    }
-  }
+    if (!data) return null;
+    return {
+      name: p.name,
+      lat: p.lat,
+      lng: p.lng,
+      placeName: p.placeName || null,
+      landmarkNo: toLandmarkValue(p.landmarkNo),
+      landmarkName: toLandmarkValue(p.landmarkName),
+      description: p.description || null,
+      url: p.photoUrl || null,
+      data,
+      mime,
+    };
+  }))).filter(Boolean);
   if (storedPhotos.length === 0) return;
 
   const existing = await loadTripFromDB(currentTripId);
@@ -2024,17 +2206,15 @@ async function autoSaveTrip() {
   try {
     await saveTripToDB(trip);
     photos.forEach((p, i) => { p._dbIndex = i; });
-    await refreshTripList();
-    await renderPublicTripsPanel();
-    await renderTripListPanel();
     setStatus('自動保存しました');
     setTimeout(() => setStatus(''), 1500);
+    refreshTripList().then(() => Promise.all([renderPublicTripsPanel(), renderTripListPanel()]));
   } catch (_) {}
 }
 
 function scheduleAutoSave() {
   if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
-  _autoSaveTimer = setTimeout(() => autoSaveTrip(), 600);
+  _autoSaveTimer = setTimeout(() => autoSaveTrip(), 1500);
 }
 
 async function saveTrip() {
@@ -2058,35 +2238,30 @@ async function saveTrip() {
 
   setStatus('保存中…');
 
-  const storedPhotos = [];
-  for (const p of photos) {
+  const storedPhotos = await Promise.all(photos.map(async (p) => {
     let data = null;
     let mime = 'image/jpeg';
     if (p.file) {
       const enc = await resizeImageToBase64(p.file);
-      if (enc) {
-        data = enc.data;
-        mime = enc.mime;
-      }
+      if (enc) { data = enc.data; mime = enc.mime; }
     } else if (p.data) {
       data = p.data;
       mime = p.mime || 'image/jpeg';
     }
-    if (data) {
-      storedPhotos.push({
-        name: p.name,
-        lat: p.lat,
-        lng: p.lng,
-        placeName: p.placeName || null,
-        landmarkNo: toLandmarkValue(p.landmarkNo),
-        landmarkName: toLandmarkValue(p.landmarkName),
-        description: p.description || null,
-        url: p.photoUrl || null,
-        data,
-        mime,
-      });
-    }
-  }
+    if (!data) return null;
+    return {
+      name: p.name,
+      lat: p.lat,
+      lng: p.lng,
+      placeName: p.placeName || null,
+      landmarkNo: toLandmarkValue(p.landmarkNo),
+      landmarkName: toLandmarkValue(p.landmarkName),
+      description: p.description || null,
+      url: p.photoUrl || null,
+      data,
+      mime,
+    };
+  })).then(arr => arr.filter(Boolean));
 
   if (storedPhotos.length === 0) {
     setStatus('写真のデータを読み込めませんでした。再度アップロードしてください。', true);
@@ -2097,16 +2272,17 @@ async function saveTrip() {
   const tripUrl = document.getElementById('tripUrlInput').value.trim() || null;
   const isPublic = document.getElementById('tripPublicInput').checked;
   const id = currentTripId || 'trip_' + Date.now();
+  const existing = currentTripId ? await loadTripFromDB(id) : null;
   const trip = {
     id,
     name,
     description,
     url: tripUrl,
     public: isPublic,
-    createdAt: currentTripId ? (await loadTripFromDB(id))?.createdAt || Date.now() : Date.now(),
+    createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
     photos: storedPhotos,
-    gpxData: gpxData || (currentTripId ? (await loadTripFromDB(id))?.gpxData : null),
+    gpxData: gpxData || existing?.gpxData || null,
   };
 
   try {
@@ -2325,6 +2501,7 @@ function updateTripInfoDisplay(trip) {
   const metaEl = document.getElementById('tripInfoMeta');
   const tripNameNav = document.getElementById('tripNameNav');
   const metaRow = document.getElementById('tripInfoMetaRow');
+  const mapOverlay = document.getElementById('mapTripNameOverlay');
   const name = trip?.name ?? document.getElementById('tripNameInput')?.value?.trim();
   const hasPhotos = photos.length > 0;
   const showNav = name || hasPhotos;
@@ -2338,6 +2515,10 @@ function updateTripInfoDisplay(trip) {
     if (metaRow) metaRow.style.display = 'none';
     if (nameEl) nameEl.textContent = '';
     if (metaEl) metaEl.innerHTML = '';
+    if (mapOverlay) {
+      mapOverlay.textContent = '';
+      mapOverlay.classList.remove('visible');
+    }
     return;
   }
   if (tripNameNav) {
@@ -2374,7 +2555,7 @@ function updateTripInfoDisplay(trip) {
       descPart = `<span class="trip-meta-desc" title="${escapeHtml(desc)}">${escapeHtml(descText)}</span>`;
     }
     if (url) {
-      const linkPart = `<a href="${escapeHtml(url)}" class="trip-meta-detail-link" target="_blank" rel="noopener noreferrer" title="リンクを開く">[詳細リンク]</a>`;
+      const linkPart = `<a href="${escapeHtml(url)}" class="trip-meta-detail-link" target="_blank" rel="noopener noreferrer" title="リンクを開く">[旅ブログ]</a>`;
       descPart = descPart ? descPart + ' ' + linkPart : linkPart;
     }
     if (descPart) parts.push(descPart);
@@ -2391,6 +2572,14 @@ function updateTripInfoDisplay(trip) {
   }
   if (metaEl) metaEl.innerHTML = parts.join(' ');
   if (metaRow) metaRow.style.display = parts.length > 0 ? 'block' : 'none';
+
+  if (mapOverlay && name) {
+    mapOverlay.textContent = name;
+    mapOverlay.classList.add('visible');
+  } else if (mapOverlay) {
+    mapOverlay.textContent = '';
+    mapOverlay.classList.remove('visible');
+  }
 
   const gpxInfoEl = document.getElementById('tripGpxInfo');
   if (gpxInfoEl) {
@@ -2952,26 +3141,22 @@ async function renderTripMenu() {
     }
   }
 
-  const titleEl = document.getElementById('tripMenuTitle');
-  if (titleEl) titleEl.textContent = name;
-
   content.innerHTML = '';
   content.className = 'trip-menu-content';
 
   if (desc || url) {
     const descEl = document.createElement('div');
-    descEl.className = 'trip-menu-section-body';
+    descEl.className = 'trip-menu-section-body trip-menu-desc';
     if (desc) {
       descEl.appendChild(document.createTextNode(desc));
     }
     if (url) {
       if (desc) descEl.appendChild(document.createTextNode(' '));
-      const link = document.createElement('a');
-      link.href = url;
-      link.className = 'trip-menu-detail-link';
-      link.textContent = '[詳細リンク]';
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'trip-menu-detail-link trip-menu-detail-link-btn';
+      link.textContent = '[旅ブログ]';
+      link.onclick = () => window.open(url, '_blank', POPUP_FEATURES);
       descEl.appendChild(link);
     }
     content.appendChild(descEl);
@@ -2985,6 +3170,17 @@ async function renderTripMenu() {
     content.appendChild(metaEl);
   }
 
+  const tripId = _currentViewingTripId || currentTripId || '';
+  const travelogueInfo = getTravelogueInfo(tripId);
+  const hasLink = travelogueInfo || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent);
+  if (hasLink) {
+    const travelogueLinkEl = document.createElement('div');
+    travelogueLinkEl.className = 'trip-menu-travelogue-summary';
+    travelogueLinkEl.id = 'tripMenuTravelogueInfo';
+    travelogueLinkEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記まとめ</button>`;
+    content.appendChild(travelogueLinkEl);
+  }
+
   if (photos.length > 0 && !isMobileView()) {
     const controlsEl = document.createElement('div');
     controlsEl.className = 'trip-menu-controls';
@@ -2995,7 +3191,7 @@ async function renderTripMenu() {
         <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="tripMenuNextBtn">次へ</button>
       </div>
       <div class="trip-menu-controls-row">
-        <button type="button" class="btn btn-primary btn-sm play-btn" id="tripMenuPlayBtn" disabled>▶ 再生</button>
+        <button type="button" class="btn btn-primary btn-sm play-btn" id="tripMenuPlayBtn" disabled>▶ 自動再生</button>
         <button type="button" class="btn btn-secondary btn-sm stop-btn" id="tripMenuStopBtn" disabled>停止</button>
         <select id="tripMenuIntervalSelect">
           <option value="1">1秒</option>
@@ -3032,30 +3228,19 @@ async function renderTripMenu() {
   }
 
   if (photos.length > 0) {
-    const tripId = _currentViewingTripId || currentTripId || '';
-    const travelogueInfo = getTravelogueInfo(tripId);
-    const hasLink = travelogueInfo || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent);
-    const linkLabel = (document.getElementById('tripNameInput')?.value?.trim() || '旅行記') + '旅行記';
-    const dateStr = travelogueInfo?.dateStr || '';
-    let infoHtml = '';
-    if (hasLink) {
-      infoHtml += `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn">${escapeHtml(linkLabel)}</button>`;
-      if (dateStr) infoHtml += ` <span class="trip-menu-travelogue-date">（${escapeHtml(dateStr)}）</span>`;
-    }
     const travelogueWrap = document.createElement('div');
     travelogueWrap.className = 'trip-menu-controls';
     travelogueWrap.innerHTML = `
       ${isEditor() ? `<div class="trip-menu-controls-row">
         <button type="button" class="btn btn-primary btn-sm" id="tripMenuTravelogueBtn">📝 旅行記を生成</button>
       </div>` : ''}
-      <div class="trip-menu-travelogue-info" id="tripMenuTravelogueInfo">${infoHtml}</div>
       ${isEditor() ? `<div class="trip-menu-controls-row">
         <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeBtn" ${hasLink ? '' : 'disabled'} title="${hasLink ? '旅行記の地図・写真・説明から週刊少年ジャンプ表紙風の漫画を生成' : '旅行記を生成してから利用できます'}">🎬 旅行アニメを生成</button>
       </div>` : ''}
       <div class="trip-menu-anime-thumb-wrap" id="tripMenuAnimeThumb"></div>
     `;
     content.appendChild(travelogueWrap);
-    const travelogueLinkBtn = travelogueWrap.querySelector('button.trip-menu-travelogue-link-btn');
+    const travelogueLinkBtn = document.querySelector('button.trip-menu-travelogue-link-btn');
     if (travelogueLinkBtn) {
       travelogueLinkBtn.onclick = async (e) => {
         e.preventDefault();
@@ -3063,8 +3248,8 @@ async function renderTripMenu() {
         if (!content) content = await loadTravelogueHtmlFromDB(tripId);
         if (content) {
           const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
-          const url = URL.createObjectURL(blob);
-          window.open(url, '_blank', 'noopener,noreferrer');
+          const blobUrl = URL.createObjectURL(blob);
+          window.open(blobUrl, '_blank', POPUP_FEATURES);
         } else {
           setStatus('旅行記を開けません。再度「旅行記を生成」してください。', true);
         }
@@ -3260,11 +3445,14 @@ async function openDataFolderModal() {
       });
     }
     const animeList = await listAnimeFromDB();
+    const hiddenIds = getHiddenAnimeIds();
+    const visibleAnime = animeList.filter(a => !hiddenIds.has(a.id));
+    const hiddenAnime = animeList.filter(a => hiddenIds.has(a.id));
     animeEl.innerHTML = '';
-    if (animeList.length === 0) {
+    if (visibleAnime.length === 0) {
       animeEl.innerHTML = '<p class="data-folder-empty">旅行アニメがありません。旅行アニメを生成してください。</p>';
     } else {
-      animeList.forEach((a) => {
+      visibleAnime.forEach((a) => {
         const card = document.createElement('button');
         card.type = 'button';
         card.className = 'data-folder-anime-card';
@@ -3277,6 +3465,40 @@ async function openDataFolderModal() {
         card.onclick = () => openAnimeFromData(a.id);
         animeEl.appendChild(card);
       });
+    }
+    const hiddenSection = document.getElementById('dataFolderHiddenAnimeSection');
+    const hiddenListEl = document.getElementById('dataFolderHiddenAnimeList');
+    if (hiddenSection && hiddenListEl && isEditor() && hiddenAnime.length > 0) {
+      hiddenSection.style.display = '';
+      hiddenListEl.innerHTML = '';
+      hiddenAnime.forEach((a) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'data-folder-anime-card-wrap';
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'data-folder-anime-card';
+        const name = (a.tripName || a.tripId || '旅行アニメ').slice(0, 20);
+        const date = a.createdAt ? new Date(a.createdAt).toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' }) : '';
+        const thumbSrc = a.thumbnail?.data ? `data:${a.thumbnail.mime || 'image/png'};base64,${a.thumbnail.data}` : '';
+        card.innerHTML = thumbSrc
+          ? `<img src="${thumbSrc}" alt="" class="data-folder-anime-thumb"><span class="data-folder-anime-name">${escapeHtml(name)}</span><span class="data-folder-anime-date">${escapeHtml(date)}</span>`
+          : `<span class="data-folder-anime-name">${escapeHtml(name)}</span><span class="data-folder-anime-date">${escapeHtml(date)}</span>`;
+        card.onclick = () => openAnimeFromData(a.id);
+        const unhideBtn = document.createElement('button');
+        unhideBtn.type = 'button';
+        unhideBtn.className = 'data-folder-anime-unhide-btn';
+        unhideBtn.textContent = '表示に戻す';
+        unhideBtn.onclick = (e) => {
+          e.stopPropagation();
+          setAnimeHidden(a.id, false);
+          openDataFolderModal();
+        };
+        wrap.appendChild(card);
+        wrap.appendChild(unhideBtn);
+        hiddenListEl.appendChild(wrap);
+      });
+    } else if (hiddenSection) {
+      hiddenSection.style.display = 'none';
     }
   } catch (err) {
     traveloguesEl.innerHTML = `<p class="data-folder-error">${escapeHtml(err.message || '読み込みに失敗しました')}</p>`;
@@ -3353,6 +3575,21 @@ async function openAnimeFromData(id) {
       });
       contentEl.appendChild(grid);
     }
+  }
+  if (isEditor()) {
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.className = 'anime-hide-btn';
+    hideBtn.textContent = 'このアニメを非表示にする';
+    hideBtn.onclick = () => {
+      setAnimeHidden(anime.id, true);
+      modal.classList.remove('open');
+      renderTripMenu();
+      renderPublicTripsPanel();
+      const dataFolderModal = document.getElementById('dataFolderModal');
+      if (dataFolderModal?.classList.contains('open')) openDataFolderModal();
+    };
+    contentEl.appendChild(hideBtn);
   }
   modal.classList.add('open');
 }
@@ -4079,6 +4316,16 @@ async function setup() {
       document.getElementById('playPhotoOverlay').classList.remove('visible', 'play-mode');
     }
   };
+
+  document.getElementById('fullPhotoClose').onclick = closeFullSizePhoto;
+  document.getElementById('fullPhotoOverlay').onclick = e => {
+    if (e.target.id === 'fullPhotoOverlay') closeFullSizePhoto();
+  };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('fullPhotoOverlay')?.classList.contains('visible')) {
+      closeFullSizePhoto();
+    }
+  });
   document.getElementById('playOverlayStopBtn').onclick = () => {
     if (isPlaying) stopPlay();
   };
@@ -4091,12 +4338,20 @@ async function setup() {
       openPhotoEditModal(currentIndex);
     }
   };
+  document.getElementById('playPhotoOverlay')?.addEventListener('click', e => {
+    const photoArea = e.target.closest('.play-overlay-photo');
+    if (photoArea && !e.target.closest('.play-overlay-buttons')) {
+      if (photos.length > 0 && currentIndex >= 0) showFullSizePhoto(currentIndex);
+    }
+  });
 
-  document.getElementById('tripMenuBack').onclick = (e) => {
+  const goToTripList = (e) => {
     e.preventDefault();
     _showTripListInPanel = true;
     renderPublicTripsPanel();
   };
+  const panelHeaderTripList = document.getElementById('panelHeaderTripList');
+  if (panelHeaderTripList) panelHeaderTripList.onclick = goToTripList;
 
   document.getElementById('tripListClose').onclick = closeTripListPanel;
   document.getElementById('tripListOverlay').onclick = closeTripListPanel;
@@ -4143,6 +4398,28 @@ async function setup() {
         e.preventDefault();
         e.stopPropagation();
         openPhotoEditModal(idx);
+      }
+    }
+    const photoWrap = e.target.closest('.popup-photo-clickable');
+    if (photoWrap) {
+      const idx = parseInt(photoWrap.dataset.photoIndex, 10);
+      if (!isNaN(idx) && photos[idx]) {
+        e.preventDefault();
+        if (map) map.closePopup();
+        showFullSizePhoto(idx);
+      }
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const photoWrap = e.target.closest('.popup-photo-clickable');
+    if (photoWrap) {
+      const idx = parseInt(photoWrap.dataset.photoIndex, 10);
+      if (!isNaN(idx) && photos[idx]) {
+        e.preventDefault();
+        if (map) map.closePopup();
+        showFullSizePhoto(idx);
       }
     }
   });
