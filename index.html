@@ -139,13 +139,18 @@
         </section>
         <section class="menu-section">
           <button type="button" class="btn btn-secondary menu-full desktop-only" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
+          <button type="button" class="btn btn-secondary menu-full" id="downloadPublicTripsBtn" title="公開トリップをJSONでダウンロード">📥 公開トリップをダウンロード</button>
           <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="data/public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
           </div>
           <div class="menu-row editor-only">
-            <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップに紐づくスタンプ・旅行記・アニメを削除して容量を節約">🗑️ ストレージを最適化</button>
+            <input type="file" id="compressPublicTripsInput" accept=".json,application/json" hidden>
+            <button type="button" class="btn btn-secondary menu-full" id="compressPublicTripsBtn" title="既存の public-trips.json を圧縮して容量を削減">🗜️ public-trips.json を圧縮</button>
+          </div>
+          <div class="menu-row editor-only">
+            <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
           </div>
         </section>
         <p class="menu-hint editor-only-hint" id="editorOnlyHint" style="display:none">写真の閲覧・自動再生は可能です。アップロードするにはログインしてください</p>
