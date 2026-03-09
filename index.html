@@ -17,13 +17,12 @@
       <div class="header-trip-area">
         <div class="header-controls-row" id="headerControlsRow">
           <span class="trip-name-nav" id="tripNameNav" style="display:none">
-            <span class="trip-info-name" id="tripInfoName"></span>
-            <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="photoPrevBtnHeader">前へ</button>
-            <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="photoNextBtnHeader">次へ</button>
+            <span class="photo-nav-label photo-all-photos-btn trip-info-name" id="tripInfoName" title="全ての写真をサムネイル表示">写真（0枚）</span>
+            <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="photoPrevBtnHeader"><span class="header-btn-text-desktop">前へ</span><span class="header-btn-text-mobile">前</span></button>
+            <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="photoNextBtnHeader"><span class="header-btn-text-desktop">次へ</span><span class="header-btn-text-mobile">次</span></button>
+            <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled><span class="play-btn-label-play"><span class="header-btn-text-desktop">▶ 自動再生</span><span class="header-btn-text-mobile">▶︎再生</span></span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
           </span>
           <span class="header-controls-sep" id="headerControlsSep" style="display:none">|</span>
-          <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled>▶ 自動再生</button>
-          <button type="button" class="btn btn-secondary btn-sm stop-btn" id="stopBtn" disabled>停止</button>
           <select id="intervalSelect">
             <option value="1">1秒</option>
             <option value="3" selected>3秒</option>
@@ -54,13 +53,10 @@
         <section class="menu-section menu-mobile-controls" id="menuMobileControls">
           <h3>操作</h3>
           <div class="menu-row">
-            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled>▶ 自動再生</button>
-            <button type="button" class="btn btn-secondary btn-sm stop-btn" id="menuStopBtn" disabled>停止</button>
-          </div>
-          <div class="menu-row">
             <span class="photo-nav-label photo-all-photos-btn all-photos-btn" id="menuAllPhotosBtn" title="全ての写真をサムネイル表示">写真（0枚）</span>
             <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="menuPrevBtn">前へ</button>
             <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="menuNextBtn">次へ</button>
+            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled><span class="play-btn-label-play">▶ 自動再生</span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
           </div>
         </section>
         <section class="menu-section">

@@ -1193,15 +1193,16 @@ select {
   position: absolute;
   top: max(1rem, env(safe-area-inset-top));
   right: max(1rem, env(safe-area-inset-right));
-  padding: 0.75rem 1.4rem;
-  font-size: 1.35rem;
-  font-weight: 700;
+  padding: 0.51rem 1.02rem;
+  font-size: 1.02rem;
+  font-weight: 800;
   color: #fff;
-  background: linear-gradient(135deg, rgba(131, 58, 180, 0.9) 0%, rgba(253, 29, 29, 0.9) 50%, rgba(252, 176, 69, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(131, 58, 180, 0.96) 0%, rgba(253, 29, 29, 0.96) 50%, rgba(252, 176, 69, 0.96) 100%);
   border-radius: var(--radius);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-  z-index: 500;
-  pointer-events: none;
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 255, 255, 0.5);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  z-index: 700;
+  cursor: pointer;
   opacity: 0;
   transform: translateX(20px);
   transition: opacity 0.4s ease, transform 0.4s ease;
@@ -1210,6 +1211,12 @@ select {
   opacity: 1;
   transform: translateX(0);
   animation: map-trip-name-float 4s ease-in-out infinite;
+}
+@media (max-width: 768px) {
+  .map-trip-name-overlay {
+    font-size: 0.77rem;
+    padding: 0.38rem 0.77rem;
+  }
 }
 @keyframes map-trip-name-float {
   0%, 100% { transform: translateX(0) translateY(0); }
@@ -1260,12 +1267,12 @@ select {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-/* 自動再生時：地図上に写真オーバーレイ（Instagram風カード） */
+/* 自動再生時：地図上に写真オーバーレイ（ポップアップと同じサイズ） */
 .play-photo-overlay {
   position: absolute;
   bottom: 1.5rem;
   right: 1.5rem;
-  width: 510px;
+  width: 454px;
   background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -1339,9 +1346,13 @@ select {
 .play-photo-overlay.play-mode .play-overlay-stop-btn {
   display: block;
 }
+.play-photo-overlay.play-mode {
+  /* ポップアップと同じサイズのため scale なし */
+}
 .play-overlay-photo {
   position: relative;
-  aspect-ratio: 4/3;
+  width: 100%;
+  height: 314px;
   overflow: hidden;
   perspective: 1000px;
   cursor: pointer;
@@ -1567,13 +1578,7 @@ select {
   transform: translateY(100%) !important;
 }
 
-/* 自動再生時：GPSポイントのポップアップを正面表示・適正サイズに */
-.main.play-mode .photo-popup .popup-photo-content {
-  width: 363px;
-}
-.main.play-mode .photo-popup .popup-photo-img {
-  height: 273px;
-}
+/* 自動再生時：ポップアップは通常と同じサイズ */
 
 /* === 公開トリップパネル === */
 .public-trips-panel {
@@ -1702,19 +1707,16 @@ select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border);
 }
 .trip-menu-nav-arrow {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: none;
   background: none;
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 1rem;
   cursor: pointer;
   transition: opacity 0.2s;
 }
@@ -1753,8 +1755,31 @@ select {
   line-height: 1.4;
   word-break: break-word;
 }
-.trip-menu-header {
-  margin-bottom: 0.25rem;
+.trip-menu-header-section {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-hover);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.trip-menu-header-section .trip-menu-meta {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.trip-menu-header-section .trip-menu-nav-row {
+  margin: 0;
+}
+.trip-menu-header-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
+}
+.trip-menu-header-divider:first-child {
+  margin-top: 0;
+}
+.trip-menu-header-divider:last-child {
+  margin-bottom: 0;
 }
 .trip-menu-title {
   font-size: 1rem;
@@ -1895,6 +1920,18 @@ select {
   align-items: center;
   gap: 0.5rem;
 }
+.trip-menu-char-btn-with-photo {
+  padding: 0.35rem 0.75rem;
+  min-width: 0;
+}
+.trip-menu-char-btn-with-photo .trip-menu-char-btn-img {
+  width: 1em;
+  height: 1em;
+  object-fit: cover;
+  display: block;
+  border-radius: 4px;
+  vertical-align: middle;
+}
 .trip-menu-anime-gen-row select {
   padding: 0.2rem 0.5rem;
   font-size: 0.85rem;
@@ -2016,11 +2053,20 @@ select {
   margin: 0.25rem 0;
 }
 .trip-menu-map {
-  height: 140px;
+  display: block;
+  position: relative;
+  width: 100%;
+  min-width: 200px;
+  height: 180px;
+  min-height: 140px;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg);
   margin-bottom: 0.5rem;
+}
+.trip-menu-map .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
 }
 .trip-menu-thumbnails {
   display: flex;
@@ -2458,7 +2504,7 @@ select {
 }
 .photo-popup .popup-photo-content {
   position: relative;
-  width: 315px;
+  width: 454px;
   max-width: 100%;
 }
 .photo-popup .popup-photo-edit {
@@ -2506,10 +2552,25 @@ select {
   z-index: 2;
   pointer-events: none;
 }
+.photo-popup .popup-photo-place-overlay {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: auto;
+  padding: 0.4rem 0.6rem;
+  background: linear-gradient(135deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.6) 100%);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  z-index: 2;
+  pointer-events: none;
+  border-radius: var(--radius) 0 0 0;
+}
 .photo-popup .popup-photo-img {
   display: block;
   width: 100%;
-  height: 218px;
+  height: 314px;
   object-fit: cover;
   border-radius: var(--radius) var(--radius) 0 0;
 }
@@ -2521,12 +2582,6 @@ select {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text);
-}
-.photo-popup .popup-photo-place {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-top: 0.2rem;
 }
 .photo-popup .popup-desc {
   padding: 0.5rem 0.6rem;
@@ -2546,6 +2601,11 @@ select {
   color: var(--accent);
 }
 
+/* ヘッダーボタン：デスクトップ時は長いラベル、モバイル時は短いラベル */
+.header-btn-text-mobile {
+  display: none;
+}
+
 /* メニュー内モバイル操作（デスクトップでは非表示） */
 .menu-mobile-controls {
   display: none;
@@ -2561,7 +2621,16 @@ select {
     background: var(--mobile-bg);
   }
 
-  /* ヘッダー：独立した細いバー・トリップ名（写真枚数）、前へ、次へ、再生、停止のみ */
+  /* ヘッダー：トリップ名(枚数)、前、次、▶︎再生、ハンバーガーのみ（AirGo非表示） */
+  .header:has(.trip-name-nav.visible) .header-title {
+    display: none !important;
+  }
+  .header-btn-text-desktop {
+    display: none;
+  }
+  .header-btn-text-mobile {
+    display: inline;
+  }
   .header {
     position: sticky;
     top: 0;
@@ -2665,15 +2734,42 @@ select {
     }
   }
 
+  /* 自動再生時：地図を全画面表示、ヘッダー・フッター非表示 */
+  .app.play-mode .header {
+    display: none !important;
+  }
+  .app.play-mode .status {
+    display: none !important;
+  }
+  .app.play-mode .all-photos-thumbnails {
+    display: none !important;
+  }
+  .main.play-mode .map-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    z-index: 500;
+  }
+  .main.play-mode .map-container #map {
+    min-height: 100%;
+  }
+
   /* 公開トリップ：ボトムシート・引っ張って展開 */
   .trip-panel-drag-handle {
     display: flex;
     flex-shrink: 0;
     justify-content: center;
     align-items: center;
-    padding: 0.5rem;
+    padding: 0.75rem 0.5rem;
     cursor: pointer;
     background: rgba(26, 26, 26, 0.95);
+    -webkit-tap-highlight-color: transparent;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
   .trip-panel-drag-handle::before {
@@ -2694,8 +2790,9 @@ select {
     border-top: none;
     background: rgba(26, 26, 26, 0.98);
     flex-shrink: 0;
-    transition: max-height 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    transition: max-height 0.5s cubic-bezier(0.34, 1.12, 0.64, 1);
     padding-bottom: env(safe-area-inset-bottom);
+    overflow: hidden;
   }
   .public-trips-panel .trip-panel-trip-list {
     min-height: 48px;
@@ -2711,11 +2808,10 @@ select {
     max-height: 60dvh;
   }
   /* トリップメニュー内テキスト：黒背景で見やすく */
-  .public-trips-panel .trip-menu-nav-row {
-    border-bottom-color: rgba(255, 255, 255, 0.3);
+  .public-trips-panel .trip-menu-header-section {
+    background: rgba(255, 255, 255, 0.12);
   }
   .public-trips-panel .trip-menu-nav-arrow {
-    background: none;
     color: #fff;
   }
   .public-trips-panel .trip-menu-nav-row-bottom {
@@ -2862,6 +2958,7 @@ select {
   .play-overlay-photo {
     flex: 1;
     width: 100%;
+    max-width: min(383px, calc(100vw - 2rem));
     aspect-ratio: auto;
     display: flex;
     align-items: center;
@@ -2869,11 +2966,10 @@ select {
     min-height: 0;
   }
   .play-overlay-photo img {
-    max-height: 70vh;
-    max-height: 70dvh;
-    width: auto;
-    max-width: 100%;
-    object-fit: contain;
+    width: 100%;
+    height: 245px;
+    max-height: 245px;
+    object-fit: cover;
   }
   .play-overlay-info,
   .play-overlay-place,
@@ -2966,18 +3062,15 @@ select {
 
   /* ポップアップ：写真を小さく */
   .photo-popup .popup-photo-content {
-    width: min(266px, calc(100vw - 2rem));
+    width: min(383px, calc(100vw - 2rem));
   }
   .photo-popup .popup-photo-img {
     width: 100%;
-    height: 170px;
+    height: 245px;
     object-fit: cover;
   }
   .photo-popup .popup-photo-name {
     font-size: 0.8rem;
-  }
-  .photo-popup .popup-photo-place {
-    font-size: 0.7rem;
   }
   .photo-popup .popup-photo-info,
   .photo-popup .popup-desc,
@@ -3049,14 +3142,17 @@ select {
     min-width: 90px;
   }
   .photo-popup .popup-photo-content {
-    width: min(242px, calc(100vw - 1.5rem));
+    width: min(348px, calc(100vw - 1.5rem));
   }
   .photo-popup .popup-photo-img {
-    height: 145px;
+    height: 209px;
+  }
+  .play-overlay-photo {
+    max-width: min(348px, calc(100vw - 1.5rem));
   }
   .play-overlay-photo img {
-    max-height: 65vh;
-    max-height: 65dvh;
+    height: 209px;
+    max-height: 209px;
   }
   .all-photos-strip .all-photo-thumb {
     width: 48px;
