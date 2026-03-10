@@ -160,6 +160,9 @@ let gpxData = null;
 let gpxTrackPoints = []; // { lat, lon, time, ele, speed, temp, hr } - 各trkptの詳細データ
 let publicTrips = []; // デプロイ時に含まれる公開トリップ（public-trips.json）
 let _currentViewingTripId = null; // スタンプ保存用（loadTrip/loadTripAndShowPhotoで設定）
+let _pendingExportBlob = null;
+let _pendingExportCount = 0;
+let _pendingExportFilename = 'public-trips.json';
 
 const DEFAULT_CENTER = [35.6812, 139.7671]; // 東京
 const DEFAULT_ZOOM = 5;
@@ -422,13 +425,23 @@ async function cleanupOrphanedStorage() {
   return removed;
 }
 
+/** HTML をミニファイしてストレージ容量を削減 */
+function minifyHtmlForStorage(html) {
+  if (!html || typeof html !== 'string') return html;
+  return html
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
+    .trim();
+}
+
 async function saveTravelogueHtmlToDB(tripId, html, tripName) {
   if (!tripId) return;
   const db = await openDB();
+  const minified = minifyHtmlForStorage(html);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(TRAVELOGUE_STORE, 'readwrite');
     const store = tx.objectStore(TRAVELOGUE_STORE);
-    const req = store.put({ tripId, tripName: tripName || '', html, updatedAt: Date.now() });
+    const req = store.put({ tripId, tripName: tripName || '', html: minified, updatedAt: Date.now() });
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
@@ -460,21 +473,22 @@ async function listTraveloguesFromDB() {
 async function saveAnimeToDB(tripId, tripName, panels, thumbnail, pageImages, coverImage, opts = {}) {
   const { animeType = 'cover', half, order } = opts;
   const db = await openDB();
+  const obj = {
+    tripId,
+    tripName: tripName || '',
+    panels: panels || [],
+    pageImages: pageImages || [],
+    animeType,
+    order: order != null ? order : Date.now(),
+    createdAt: Date.now()
+  };
+  if (thumbnail && (thumbnail.data || thumbnail.mime)) obj.thumbnail = thumbnail;
+  if (coverImage && (coverImage.data || coverImage.mime)) obj.coverImage = coverImage;
+  if (half != null && half !== '') obj.half = half;
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DATA_ANIME_STORE, 'readwrite');
     const store = tx.objectStore(DATA_ANIME_STORE);
-    const req = store.add({
-      tripId,
-      tripName: tripName || '',
-      panels: panels || [],
-      thumbnail: thumbnail || null,
-      pageImages: pageImages || [],
-      coverImage: coverImage || null,
-      animeType,
-      half: half || null,
-      order: order != null ? order : Date.now(),
-      createdAt: Date.now()
-    });
+    const req = store.add(obj);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -1485,6 +1499,25 @@ function stopPlay() {
 const PHOTO_MAX_DIMENSION = 1920;
 const PHOTO_JPEG_QUALITY = 0.85;
 const EXPORT_TARGET_SIZE_MB = 15;
+
+/** IndexedDB 保存用：容量削減のため小さめの解像度・品質 */
+const DB_PHOTO_MAX_DIM = 1280;
+const DB_PHOTO_QUALITY = 0.78;
+
+/** 保存用に null/空 を省略した写真オブジェクトを構築（容量削減） */
+function buildMinimalPhotoForDB(p) {
+  const o = { name: p.name, data: p.data, mime: p.mime || 'image/jpeg' };
+  if (p.lat != null && !isNaN(p.lat)) o.lat = p.lat;
+  if (p.lng != null && !isNaN(p.lng)) o.lng = p.lng;
+  if (p.placeName && String(p.placeName).trim()) o.placeName = p.placeName.trim();
+  const ln = toLandmarkValue(p.landmarkNo);
+  if (ln != null) o.landmarkNo = ln;
+  const lm = toLandmarkValue(p.landmarkName);
+  if (lm != null) o.landmarkName = lm;
+  if (p.description && String(p.description).trim()) o.description = p.description.trim();
+  if (p.url && String(p.url).trim()) o.url = p.url.trim();
+  return o;
+}
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -2633,7 +2666,7 @@ async function generateTraveloguePdf() {
     if (tripId) saveTravelogueHtmlToDB(tripId, htmlContent, tripName).catch(() => {});
     const infoEl = document.getElementById('tripMenuTravelogueInfo');
     if (infoEl) {
-      infoEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記まとめ</button>`;
+      infoEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記</button>`;
       const btn = infoEl.querySelector('button.trip-menu-travelogue-link-btn');
       if (btn) btn.onclick = () => {
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
@@ -2777,25 +2810,25 @@ async function autoSaveTrip() {
     let data = null;
     let mime = 'image/jpeg';
     if (p.file) {
-      const enc = await resizeImageToBase64(p.file);
+      const enc = await resizeImageToBase64(p.file, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
       if (enc) { data = enc.data; mime = enc.mime; }
     } else if (p.data) {
-      data = p.data;
-      mime = p.mime || 'image/jpeg';
+      try {
+        const enc = await resizeBase64ToBase64(p.mime || 'image/jpeg', p.data, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
+        if (enc) { data = enc.data; mime = enc.mime; }
+        else { data = p.data; mime = p.mime || 'image/jpeg'; }
+      } catch (_) {
+        data = p.data;
+        mime = p.mime || 'image/jpeg';
+      }
     }
     if (!data) return null;
-    return {
-      name: p.name,
-      lat: p.lat,
-      lng: p.lng,
-      placeName: p.placeName || null,
-      landmarkNo: toLandmarkValue(p.landmarkNo),
-      landmarkName: toLandmarkValue(p.landmarkName),
-      description: p.description || null,
-      url: p.photoUrl || null,
+    return buildMinimalPhotoForDB({
+      ...p,
       data,
       mime,
-    };
+      url: p.photoUrl || p.url,
+    });
   }))).filter(Boolean);
   if (storedPhotos.length === 0) return;
 
@@ -2849,25 +2882,25 @@ async function saveTrip() {
     let data = null;
     let mime = 'image/jpeg';
     if (p.file) {
-      const enc = await resizeImageToBase64(p.file);
+      const enc = await resizeImageToBase64(p.file, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
       if (enc) { data = enc.data; mime = enc.mime; }
     } else if (p.data) {
-      data = p.data;
-      mime = p.mime || 'image/jpeg';
+      try {
+        const enc = await resizeBase64ToBase64(p.mime || 'image/jpeg', p.data, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
+        if (enc) { data = enc.data; mime = enc.mime; }
+        else { data = p.data; mime = p.mime || 'image/jpeg'; }
+      } catch (_) {
+        data = p.data;
+        mime = p.mime || 'image/jpeg';
+      }
     }
     if (!data) return null;
-    return {
-      name: p.name,
-      lat: p.lat,
-      lng: p.lng,
-      placeName: p.placeName || null,
-      landmarkNo: toLandmarkValue(p.landmarkNo),
-      landmarkName: toLandmarkValue(p.landmarkName),
-      description: p.description || null,
-      url: p.photoUrl || null,
+    return buildMinimalPhotoForDB({
+      ...p,
       data,
       mime,
-    };
+      url: p.photoUrl || p.url,
+    });
   })).then(arr => arr.filter(Boolean));
 
   if (storedPhotos.length === 0) {
@@ -3356,6 +3389,64 @@ function openStampUploadModal(tripId, photoIndex, stampText) {
   if (preview) preview.innerHTML = '';
   if (input) input.value = '';
   document.getElementById('stampUploadModal').classList.add('open');
+}
+
+function openStampsModal(landmarks, tripId) {
+  const content = document.getElementById('stampsModalContent');
+  const modal = document.getElementById('stampsModal');
+  if (!content || !modal) return;
+  content.innerHTML = '';
+  content.className = 'stamps-modal-grid trip-menu-stamps-grid';
+  const stampPhotos = getStampPhotos();
+  landmarks.forEach(({ text, photoIndex }) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'trip-menu-stamp-card';
+    const key = `${tripId}_${photoIndex}`;
+    const stampPhoto = stampPhotos[key];
+    if (stampPhoto) {
+      card.classList.add('trip-menu-stamp-card-filled');
+      const img = document.createElement('img');
+      img.src = base64ToUrl(stampPhoto.mime, stampPhoto.data);
+      img.alt = text;
+      if (img.src.startsWith('blob:')) _tripMenuUrls.push(img.src);
+      const nameOverlay = document.createElement('span');
+      nameOverlay.className = 'trip-menu-stamp-name';
+      nameOverlay.textContent = text;
+      nameOverlay.title = 'クリックで写真を変更';
+      const check = document.createElement('span');
+      check.className = 'trip-menu-stamp-check';
+      check.textContent = '✅';
+      check.title = 'クリックで写真を変更';
+      const openUpload = (e) => {
+        e.stopPropagation();
+        if (isEditor()) openStampUploadModal(tripId, photoIndex, text);
+        else setStatus('スタンプの写真アップロードにはログインが必要です', true);
+      };
+      nameOverlay.onclick = openUpload;
+      check.onclick = openUpload;
+      card.appendChild(img);
+      card.appendChild(nameOverlay);
+      card.appendChild(check);
+      card.title = '写真エリア: 拡大表示 / 名前・✓: 写真を変更';
+    } else {
+      card.textContent = text;
+      card.title = 'クリックで写真をアップロード';
+    }
+    card.onclick = () => {
+      if (stampPhoto) {
+        modal.classList.remove('open');
+        showPhotoWithPopup(photoIndex);
+      } else if (isEditor()) {
+        modal.classList.remove('open');
+        openStampUploadModal(tripId, photoIndex, text);
+      } else {
+        setStatus('スタンプの写真アップロードにはログインが必要です', true);
+      }
+    };
+    content.appendChild(card);
+  });
+  modal.classList.add('open');
 }
 
 async function handleStampPhotoUpload(file) {
@@ -3855,14 +3946,14 @@ async function renderTripMenu() {
   const prevBtn = document.createElement('button');
   prevBtn.type = 'button';
   prevBtn.className = 'trip-menu-nav-arrow';
-  prevBtn.innerHTML = '◀️';
+  prevBtn.innerHTML = '<span class="trip-menu-nav-arrow-desktop">◀️</span><span class="trip-menu-nav-arrow-mobile">&lt;&lt;</span>';
   prevBtn.title = '前のトリップ';
   prevBtn.disabled = !prevTrip;
   prevBtn.onclick = () => { if (prevTrip) loadTripAndShowPhoto(normId(prevTrip), 0); };
   const nextBtn = document.createElement('button');
   nextBtn.type = 'button';
   nextBtn.className = 'trip-menu-nav-arrow';
-  nextBtn.innerHTML = '▶️';
+  nextBtn.innerHTML = '<span class="trip-menu-nav-arrow-desktop">▶️</span><span class="trip-menu-nav-arrow-mobile">&gt;&gt;</span>';
   nextBtn.title = '次のトリップ';
   nextBtn.disabled = !nextTrip;
   nextBtn.onclick = () => { if (nextTrip) loadTripAndShowPhoto(normId(nextTrip), 0); };
@@ -3895,20 +3986,30 @@ async function renderTripMenu() {
   summaryLinksRow.className = 'trip-menu-summary-links-row';
   const summaryBtns = document.createElement('div');
   summaryBtns.className = 'trip-menu-summary-btns';
+  /* ボタン順: 旅行記, アニメ, ブログ, スタンプ */
   if (hasLink) {
     const travelogueLinkEl = document.createElement('div');
     travelogueLinkEl.className = 'trip-menu-travelogue-summary';
     travelogueLinkEl.id = 'tripMenuTravelogueInfo';
-    travelogueLinkEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記まとめ</button>`;
+    travelogueLinkEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記</button>`;
     summaryBtns.appendChild(travelogueLinkEl);
   }
   if (url) {
     const blogBtn = document.createElement('button');
     blogBtn.type = 'button';
-    blogBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn';
-    blogBtn.textContent = '旅行ブログ';
+    blogBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn trip-menu-blog-btn';
+    blogBtn.textContent = 'ブログ';
     blogBtn.onclick = () => window.open(url, '_blank', POPUP_FEATURES);
     summaryBtns.appendChild(blogBtn);
+  }
+  if (landmarks.length > 0) {
+    const stampBtn = document.createElement('button');
+    stampBtn.type = 'button';
+    stampBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn trip-menu-stamp-btn';
+    stampBtn.textContent = 'スタンプ';
+    stampBtn.title = 'Trip Stamps を表示';
+    stampBtn.onclick = () => openStampsModal(landmarks, tripId);
+    summaryBtns.appendChild(stampBtn);
   }
   summaryLinksRow.appendChild(summaryBtns);
   summarySection.appendChild(summaryLinksRow);
@@ -3949,10 +4050,10 @@ async function renderTripMenu() {
     controlsEl.innerHTML = `
       <div class="trip-menu-controls-row">
         <span class="trip-menu-photo-count">写真（${photos.length}枚）</span>
-        <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="tripMenuPrevBtn">前へ</button>
-        <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="tripMenuNextBtn">次へ</button>
+        <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="tripMenuPrevBtn"><span class="trip-menu-btn-text-desktop">前へ</span><span class="trip-menu-btn-text-mobile">&lt;&lt;</span></button>
+        <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="tripMenuNextBtn"><span class="trip-menu-btn-text-desktop">次へ</span><span class="trip-menu-btn-text-mobile">&gt;&gt;</span></button>
         <button type="button" class="btn btn-primary btn-sm play-btn" id="tripMenuPlayBtn" disabled><span class="play-btn-label-play">▶︎ 再生</span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
-        <select id="tripMenuIntervalSelect">
+        <select id="tripMenuIntervalSelect" class="trip-menu-interval-select">
           <option value="1">1秒</option>
           <option value="3" selected>3秒</option>
           <option value="5">5秒</option>
@@ -4019,6 +4120,26 @@ async function renderTripMenu() {
   }
   getAnimeAllForTripDisplay(rawTripId, currentTrip?.animeList).then(async (allItems) => {
     const wrap = document.getElementById('tripMenuAnimeAll');
+    if (allItems.length > 0 && summaryBtns) {
+      const existingAnimeBtn = summaryBtns.querySelector('.trip-menu-anime-summary-btn');
+      if (!existingAnimeBtn) {
+        const animeSummaryBtn = document.createElement('button');
+        animeSummaryBtn.type = 'button';
+        animeSummaryBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn trip-menu-anime-summary-btn';
+        animeSummaryBtn.textContent = 'アニメ';
+        animeSummaryBtn.title = 'アニメ画像を表示';
+        const allIds = allItems.map(x => x.id);
+        const embeddedAnime = currentTrip?.animeList;
+        animeSummaryBtn.onclick = () => openAnimeFromData(allItems[0].id, {
+          animeIds: allIds,
+          currentIndex: 0,
+          animeList: embeddedAnime || undefined
+        });
+        const afterTravelogue = summaryBtns.querySelector('.trip-menu-travelogue-summary');
+        const insertBefore = afterTravelogue ? afterTravelogue.nextElementSibling : summaryBtns.firstElementChild;
+        summaryBtns.insertBefore(animeSummaryBtn, insertBefore);
+      }
+    }
     if (!wrap || allItems.length === 0) return;
     wrap.innerHTML = '';
     const list = document.createElement('div');
@@ -4209,7 +4330,7 @@ async function renderTripMenu() {
   const prevBtnBottom = document.createElement('button');
   prevBtnBottom.type = 'button';
   prevBtnBottom.className = 'trip-menu-nav-arrow';
-  prevBtnBottom.innerHTML = '◀️';
+  prevBtnBottom.innerHTML = '<span class="trip-menu-nav-arrow-desktop">◀️</span><span class="trip-menu-nav-arrow-mobile">&lt;&lt;</span>';
   prevBtnBottom.title = prevTrip ? `前のトリップ: ${escapeHtml(prevTrip.name || '')}` : '前のトリップ';
   prevBtnBottom.disabled = !prevTrip;
   prevBtnBottom.onclick = () => { if (prevTrip) loadTripAndShowPhoto(normId(prevTrip), 0); };
@@ -4222,7 +4343,7 @@ async function renderTripMenu() {
   const nextBtnBottom = document.createElement('button');
   nextBtnBottom.type = 'button';
   nextBtnBottom.className = 'trip-menu-nav-arrow';
-  nextBtnBottom.innerHTML = '▶️';
+  nextBtnBottom.innerHTML = '<span class="trip-menu-nav-arrow-desktop">▶️</span><span class="trip-menu-nav-arrow-mobile">&gt;&gt;</span>';
   nextBtnBottom.title = nextTrip ? `次のトリップ: ${escapeHtml(nextTrip.name || '')}` : '次のトリップ';
   nextBtnBottom.disabled = !nextTrip;
   nextBtnBottom.onclick = () => { if (nextTrip) loadTripAndShowPhoto(normId(nextTrip), 0); };
@@ -4291,6 +4412,37 @@ const EXPORT_PHOTO_MAX_DIM = 1200;
 const EXPORT_ANIME_MAX_DIM = 800;
 const EXPORT_ANIME_THUMB_MAX = 360;
 
+/** 写真から base64 データを取得（data / data URL / blob URL に対応） */
+async function getPhotoDataForExport(p) {
+  if (p?.data) return { data: p.data, mime: p.mime || 'image/jpeg' };
+  const url = p?.url || p?.photoUrl;
+  if (!url || typeof url !== 'string') return null;
+  if (url.startsWith('data:')) {
+    const m = url.match(/^data:([^;]+);base64,(.+)$/);
+    if (m) return { data: m[2], mime: m[1] };
+  }
+  if (url.startsWith('blob:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const mime = blob.type || 'image/jpeg';
+      const data = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => {
+          const m = String(r.result).match(/^data:[^;]+;base64,(.+)$/);
+          resolve(m ? m[1] : null);
+        };
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(blob);
+      });
+      return data ? { data, mime } : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
 async function compressImageForExport(mime, data, maxDim, quality) {
   if (!data) return null;
   try {
@@ -4352,8 +4504,9 @@ async function compressTripsForExport(trips, targetBytes) {
       if (trip.photos?.length) {
         const photos = [];
         for (const p of trip.photos) {
-          if (!p.data) continue;
-          const enc = await compressImageForExport(p.mime, p.data, maxDim, quality);
+          const src = await getPhotoDataForExport(p);
+          if (!src?.data) continue;
+          const enc = await compressImageForExport(src.mime, src.data, maxDim, quality);
           if (enc) photos.push({ ...p, data: enc.data, mime: enc.mime || 'image/jpeg' });
         }
         t.photos = photos;
@@ -4575,75 +4728,108 @@ async function openAnimeFromData(id, opts = {}) {
   modal.classList.add('open');
 }
 
+/**
+ * 公開トリップをエクスポート（統合）
+ * - ログイン時: ローカルの公開トリップを圧縮して保存。なければサーバーから取得。
+ * - 非ログイン時: サーバーの公開トリップをダウンロード。
+ */
 async function exportPublicTrips() {
-  if (!isEditor()) return;
-  const trips = await loadTripsFromDB();
-  let publicOnly = trips.filter(t => t.public);
-  if (publicOnly.length === 0 && publicTrips.length > 0) {
-    setStatus('ローカルに公開トリップがありません。サーバーの公開トリップをダウンロードします。');
-    downloadPublicTrips();
+  if (!isEditor()) {
+    downloadPublicTripsFromServer();
     return;
   }
-  if (publicOnly.length === 0) {
-    setStatus('公開に設定されたトリップがありません。「公開する」にチェックを入れて保存するか、「📥 公開トリップをダウンロード」でサーバーのデータを取得してください。', true);
+  const displayTrips = await getDisplayablePublicTrips(true);
+  if (displayTrips.length === 0) {
+    setStatus('公開トリップがありません。「公開する」にチェックを入れて保存するか、public-trips.json を配置してください。', true);
     return;
   }
   setStatus(`エクスポート準備中（写真・旅行記・アニメを${EXPORT_TARGET_SIZE_MB}MB以下に圧縮）…`);
   const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
   const withExtras = [];
-  for (const t of publicOnly) {
+  for (const t of displayTrips) {
     let trip = { ...t };
+    delete trip._fromServer;
     try {
-      const html = await loadTravelogueHtmlFromDB(t.id);
-      if (html) trip.travelogueHtml = html;
+      if (!trip.travelogueHtml) {
+        const html = await loadTravelogueHtmlFromDB(t.id);
+        if (html) trip.travelogueHtml = html;
+      }
     } catch (_) {}
     try {
-      const animeList = await getAnimeAllForTripDisplay(t.id);
-      if (animeList.length > 0) trip.animeList = animeList;
+      if (!trip.animeList || trip.animeList.length === 0) {
+        const animeList = await getAnimeAllForTripDisplay(t.id, t.animeList);
+        if (animeList.length > 0) trip.animeList = animeList;
+      }
     } catch (_) {}
     withExtras.push(trip);
   }
   let compressed = await compressTripsForExport(withExtras, targetBytes);
   const json = JSON.stringify(compressed);
+  if (!json || json.length < 2) {
+    setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
+    return;
+  }
   const blob = new Blob([json], { type: 'application/json' });
   const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
-  setStatus(`公開トリップ ${publicOnly.length}件を圧縮しました（${sizeMB}MB）`);
+  setStatus(`公開トリップ ${displayTrips.length}件を圧縮しました（${sizeMB}MB）`);
 
-  if ('showDirectoryPicker' in window) {
-    try {
-      setStatus('data フォルダを選択してください…');
-      const dirHandle = await window.showDirectoryPicker({
-        mode: 'readwrite',
-        startIn: 'desktop',
-      });
-      const dataDir = await dirHandle.getDirectoryHandle('data', { create: true });
-      const fileHandle = await dataDir.getFileHandle('public-trips.json', { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      setStatus(`公開トリップ ${publicOnly.length}件を data/public-trips.json に保存しました。`);
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      setStatus(err.message || '保存に失敗しました', true);
-      fallbackDownloadPublicTrips(blob, publicOnly.length);
-    }
-  } else if ('showSaveFilePicker' in window) {
-    try {
+  _pendingExportBlob = blob;
+  _pendingExportCount = displayTrips.length;
+  _pendingExportFilename = 'public-trips.json';
+  applyExportDownloadLink();
+  const msgEl = document.getElementById('exportReadyMessage');
+  if (msgEl) msgEl.textContent = `公開トリップ ${displayTrips.length}件（${sizeMB}MB）の準備が完了しました。「ダウンロード」をクリックして保存してください。`;
+  document.getElementById('exportReadyModal')?.classList.add('open');
+}
+
+function applyExportDownloadLink() {
+  const btn = document.getElementById('exportReadyDownloadBtn');
+  if (btn) btn.style.display = _pendingExportBlob ? '' : 'none';
+}
+
+function closeExportReadyModal() {
+  document.getElementById('exportReadyModal')?.classList.remove('open');
+  _pendingExportBlob = null;
+  _pendingExportCount = 0;
+  _pendingExportFilename = 'public-trips.json';
+}
+
+async function triggerExportDownload() {
+  if (!_pendingExportBlob) return;
+  const filename = _pendingExportFilename || 'public-trips.json';
+  const blob = _pendingExportBlob;
+  const count = _pendingExportCount;
+  closeExportReadyModal();
+  if (blob.size === 0) {
+    setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
+    return;
+  }
+  try {
+    if ('showSaveFilePicker' in window) {
       const handle = await window.showSaveFilePicker({
-        suggestedName: 'public-trips.json',
+        suggestedName: filename,
         types: [{ accept: { 'application/json': ['.json'] }, description: 'JSON' }],
       });
       const writable = await handle.createWritable();
-      await writable.write(blob);
+      const text = await blob.text();
+      await writable.write(text);
       await writable.close();
-      setStatus(`公開トリップ ${publicOnly.length}件を保存しました。data フォルダに data/public-trips.json として配置してください。`);
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      setStatus(err.message || '保存に失敗しました', true);
-      fallbackDownloadPublicTrips(blob, publicOnly.length);
+      setStatus(`${count}件を保存しました。`);
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setStatus(`${count}件をダウンロードしました。`);
     }
-  } else {
-    fallbackDownloadPublicTrips(blob, publicOnly.length);
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    setStatus(err.message || '保存に失敗しました', true);
   }
 }
 
@@ -4656,8 +4842,8 @@ function fallbackDownloadPublicTrips(blob, count) {
   setStatus(`公開トリップ ${count}件をダウンロードしました。data フォルダに data/public-trips.json として保存してください。`);
 }
 
-/** 公開トリップ（サーバー由来）をJSONでダウンロード（ログイン不要） */
-function downloadPublicTrips() {
+/** 公開トリップ（サーバー由来）をJSONでダウンロード */
+function downloadPublicTripsFromServer() {
   if (!publicTrips || publicTrips.length === 0) {
     setStatus('公開トリップがありません。読み込み中の場合はしばらく待ってから再度お試しください。', true);
     return;
@@ -4726,6 +4912,176 @@ async function compressExistingPublicTrips() {
   input.click();
 }
 
+async function downloadIndexedDBTrips() {
+  if (!isEditor()) return;
+  const filename = `indexeddb-trips-${new Date().toISOString().slice(0, 10)}.json`;
+  if ('showSaveFilePicker' in window) {
+    let fileHandle;
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ accept: { 'application/json': ['.json'] }, description: 'JSON' }],
+      });
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setStatus(err.message || '保存先の選択に失敗しました', true);
+      return;
+    }
+    try {
+      setStatus('IndexedDB のトリップを読み込み中…');
+      const trips = await loadTripsFromDB();
+      if (trips.length === 0) {
+        setStatus('IndexedDB にトリップがありません', true);
+        return;
+      }
+      setStatus(`トリップ ${trips.length}件を取得中…`);
+      const withExtras = [];
+      for (const t of trips) {
+        let trip = { ...t };
+        try {
+          const html = await loadTravelogueHtmlFromDB(t.id);
+          if (html) trip.travelogueHtml = html;
+        } catch (_) {}
+        try {
+          const animeList = await getAnimeAllForTripDisplay(t.id, t.animeList);
+          if (animeList.length > 0) trip.animeList = animeList;
+        } catch (_) {}
+        withExtras.push(trip);
+      }
+      setStatus(`圧縮中（${EXPORT_TARGET_SIZE_MB}MB以下に）…`);
+      const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
+      const compressed = await compressTripsForExport(withExtras, targetBytes);
+      const json = JSON.stringify(compressed);
+      if (!json || json.length < 2) {
+        setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
+        return;
+      }
+      setStatus('ファイルに書き込み中…');
+      const writable = await fileHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      const sizeMB = (json.length / 1024 / 1024).toFixed(1);
+      setStatus(`トリップ ${trips.length}件を保存しました（${sizeMB}MB）`);
+    } catch (err) {
+      setStatus(err.message || '保存に失敗しました', true);
+    }
+    return;
+  }
+  try {
+    setStatus('IndexedDB のトリップを読み込み中…');
+    const trips = await loadTripsFromDB();
+    if (trips.length === 0) {
+      setStatus('IndexedDB にトリップがありません', true);
+      return;
+    }
+    setStatus(`トリップ ${trips.length}件を取得中…`);
+    const withExtras = [];
+    for (const t of trips) {
+      let trip = { ...t };
+      try {
+        const html = await loadTravelogueHtmlFromDB(t.id);
+        if (html) trip.travelogueHtml = html;
+      } catch (_) {}
+      try {
+        const animeList = await getAnimeAllForTripDisplay(t.id, t.animeList);
+        if (animeList.length > 0) trip.animeList = animeList;
+      } catch (_) {}
+      withExtras.push(trip);
+    }
+    setStatus(`圧縮中（${EXPORT_TARGET_SIZE_MB}MB以下に）…`);
+    const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
+    const compressed = await compressTripsForExport(withExtras, targetBytes);
+    const json = JSON.stringify(compressed);
+    if (!json || json.length < 2) {
+      setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
+      return;
+    }
+    const blob = new Blob([json], { type: 'application/json' });
+    _pendingExportBlob = blob;
+    _pendingExportCount = trips.length;
+    _pendingExportFilename = filename;
+    applyExportDownloadLink();
+    const msgEl = document.getElementById('exportReadyMessage');
+    const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
+    if (msgEl) msgEl.textContent = `IndexedDB のトリップ ${trips.length}件（${sizeMB}MB・圧縮済）の準備が完了しました。「ダウンロード」をクリックして保存してください。`;
+    document.getElementById('exportReadyModal')?.classList.add('open');
+    setStatus(`トリップ ${trips.length}件の準備が完了しました`);
+  } catch (err) {
+    setStatus(err.message || 'ダウンロードの準備に失敗しました', true);
+  }
+}
+
+async function downloadIndexedDBTripsSimple() {
+  if (!isEditor()) return;
+  const filename = `indexeddb-trips-simple-${new Date().toISOString().slice(0, 10)}.json`;
+  if ('showSaveFilePicker' in window) {
+    let fileHandle;
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ accept: { 'application/json': ['.json'] }, description: 'JSON' }],
+      });
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setStatus(err.message || '保存先の選択に失敗しました', true);
+      return;
+    }
+    try {
+      setStatus('IndexedDB のトリップを読み込み中…');
+      const trips = await loadTripsFromDB();
+      if (trips.length === 0) {
+        setStatus('IndexedDB にトリップがありません', true);
+        return;
+      }
+      setStatus(`圧縮中（${EXPORT_TARGET_SIZE_MB}MB以下に）…`);
+      const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
+      const compressed = await compressTripsForExport(trips, targetBytes);
+      const json = JSON.stringify(compressed);
+      if (!json || json.length < 2) {
+        setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
+        return;
+      }
+      setStatus('ファイルに書き込み中…');
+      const writable = await fileHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      const sizeMB = (json.length / 1024 / 1024).toFixed(1);
+      setStatus(`トリップ ${trips.length}件を保存しました（簡易版・${sizeMB}MB）`);
+    } catch (err) {
+      setStatus(err.message || '保存に失敗しました', true);
+    }
+    return;
+  }
+  try {
+    setStatus('IndexedDB のトリップを読み込み中…');
+    const trips = await loadTripsFromDB();
+    if (trips.length === 0) {
+      setStatus('IndexedDB にトリップがありません', true);
+      return;
+    }
+    setStatus(`圧縮中（${EXPORT_TARGET_SIZE_MB}MB以下に）…`);
+    const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
+    const compressed = await compressTripsForExport(trips, targetBytes);
+    const json = JSON.stringify(compressed);
+    if (!json || json.length < 2) {
+      setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
+      return;
+    }
+    const blob = new Blob([json], { type: 'application/json' });
+    _pendingExportBlob = blob;
+    _pendingExportCount = trips.length;
+    _pendingExportFilename = filename;
+    applyExportDownloadLink();
+    const msgEl = document.getElementById('exportReadyMessage');
+    const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
+    if (msgEl) msgEl.textContent = `IndexedDB のトリップ ${trips.length}件（${sizeMB}MB・簡易版・圧縮済）の準備が完了しました。「ダウンロード」をクリックして保存してください。`;
+    document.getElementById('exportReadyModal')?.classList.add('open');
+    setStatus(`トリップ ${trips.length}件の準備が完了しました`);
+  } catch (err) {
+    setStatus(err.message || 'ダウンロードの準備に失敗しました', true);
+  }
+}
+
 async function importTripsFromFile() {
   if (!isEditor()) return;
   const input = document.getElementById('tripImportInput');
@@ -4745,13 +5101,26 @@ async function importTripsFromFile() {
       setStatus(`トリップ ${trips.length}件をインポート中…`);
       for (const trip of trips) {
         if (!trip.id || !trip.photos || !Array.isArray(trip.photos)) continue;
+        const storedPhotos = [];
+        for (const p of trip.photos) {
+          if (!p?.data) continue;
+          try {
+            const enc = await resizeBase64ToBase64(p.mime || 'image/jpeg', p.data, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
+            const data = enc?.data || p.data;
+            const mime = enc?.mime || p.mime || 'image/jpeg';
+            storedPhotos.push(buildMinimalPhotoForDB({ ...p, data, mime, url: p.url || p.photoUrl }));
+          } catch (_) {
+            storedPhotos.push(buildMinimalPhotoForDB({ ...p, url: p.url || p.photoUrl }));
+          }
+        }
+        if (storedPhotos.length === 0) continue;
         const toSave = {
           id: trip.id,
           name: trip.name || '無題',
           description: trip.description || null,
           url: trip.url || null,
           public: !!trip.public,
-          photos: trip.photos,
+          photos: storedPhotos,
           gpxData: trip.gpxData || null,
           createdAt: trip.createdAt || Date.now(),
           updatedAt: Date.now(),
@@ -5296,6 +5665,19 @@ async function setup() {
   document.getElementById('animeModal').onclick = (e) => {
     if (e.target.id === 'animeModal') document.getElementById('animeModal').classList.remove('open');
   };
+  document.getElementById('stampsModalClose').onclick = () => {
+    document.getElementById('stampsModal').classList.remove('open');
+  };
+  document.getElementById('stampsModal').onclick = (e) => {
+    if (e.target.id === 'stampsModal') document.getElementById('stampsModal').classList.remove('open');
+  };
+  document.getElementById('exportReadyModalClose').onclick = () => {
+    closeExportReadyModal();
+  };
+  document.getElementById('exportReadyModal').onclick = (e) => {
+    if (e.target.id === 'exportReadyModal') closeExportReadyModal();
+  };
+  document.getElementById('exportReadyDownloadBtn').onclick = () => triggerExportDownload();
   document.getElementById('publicTripConfigModal').onclick = e => {
     if (e.target.id === 'publicTripConfigModal') document.getElementById('publicTripConfigModal').classList.remove('open');
   };
@@ -5377,9 +5759,9 @@ async function setup() {
   };
 
   document.getElementById('exportPublicBtn').onclick = exportPublicTrips;
-  const downloadPublicTripsBtn = document.getElementById('downloadPublicTripsBtn');
-  if (downloadPublicTripsBtn) downloadPublicTripsBtn.onclick = downloadPublicTrips;
   document.getElementById('tripImportBtn').onclick = importTripsFromFile;
+  document.getElementById('downloadIndexedDBTripsBtn').onclick = downloadIndexedDBTrips;
+  document.getElementById('downloadIndexedDBTripsSimpleBtn').onclick = downloadIndexedDBTripsSimple;
   const compressPublicTripsBtn = document.getElementById('compressPublicTripsBtn');
   if (compressPublicTripsBtn) compressPublicTripsBtn.onclick = compressExistingPublicTrips;
   const cleanupStorageBtn = document.getElementById('cleanupStorageBtn');

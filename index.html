@@ -135,11 +135,12 @@
         </section>
         <section class="menu-section">
           <button type="button" class="btn btn-secondary menu-full desktop-only" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
-          <button type="button" class="btn btn-secondary menu-full" id="downloadPublicTripsBtn" title="公開トリップをJSONでダウンロード">📥 公開トリップをダウンロード</button>
-          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportPublicBtn" title="data/public-trips.json に保存（同名時は上書き）">📤 公開トリップをエクスポート</button>
+          <button type="button" class="btn btn-secondary menu-full" id="exportPublicBtn" title="ローカルの公開トリップを圧縮して保存、またはサーバーからダウンロード">📤 公開トリップをエクスポート</button>
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
+            <button type="button" class="btn btn-secondary menu-full" id="downloadIndexedDBTripsBtn" title="IndexedDB内の全トリップをJSONでダウンロード（保存先を先に選択）">📤 IndexedDB トリップをダウンロード</button>
+            <button type="button" class="btn btn-secondary menu-full" id="downloadIndexedDBTripsSimpleBtn" title="写真のみ（旅行記・アニメなし）で軽量ダウンロード">📤 IndexedDB トリップ（簡易）</button>
           </div>
           <div class="menu-row editor-only">
             <input type="file" id="compressPublicTripsInput" accept=".json,application/json" hidden>
@@ -155,6 +156,22 @@
         </section>
       </div>
     </aside>
+
+    <!-- エクスポート準備完了モーダル -->
+    <div class="modal-overlay" id="exportReadyModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>エクスポート準備完了</h2>
+          <button type="button" class="modal-close" id="exportReadyModalClose" aria-label="閉じる">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="exportReadyMessage">public-trips.json の準備が完了しました。</p>
+          <div class="modal-actions" style="margin-top:1rem" id="exportReadyDownloadArea">
+            <button type="button" class="btn btn-primary" id="exportReadyDownloadBtn">ダウンロード</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- ヘルプモーダル -->
     <div class="modal-overlay" id="helpModal">
@@ -185,7 +202,7 @@
             <h4>公開トリップのデプロイ</h4>
             <ul>
               <li>トリップを「公開する」で保存</li>
-              <li>「📤 公開トリップをエクスポート」で public-trips.json をダウンロード</li>
+              <li>「📤 公開トリップをエクスポート」で public-trips.json を取得（ローカルを圧縮保存 or サーバーからダウンロード）</li>
               <li>airgo フォルダに配置して Cloud Run にデプロイ</li>
             </ul>
           </section>
@@ -400,6 +417,19 @@
             <div id="dataFolderHiddenAnimeList" class="data-folder-list data-folder-anime-grid"></div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trip Stamps モーダル -->
+  <div class="modal-overlay" id="stampsModal">
+    <div class="modal stamps-modal">
+      <div class="modal-header">
+        <h2>Trip Stamps</h2>
+        <button type="button" class="modal-close" id="stampsModalClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body stamps-modal-body">
+        <div id="stampsModalContent" class="stamps-modal-grid"></div>
       </div>
     </div>
   </div>

@@ -704,6 +704,15 @@ body {
 .anime-modal-content {
   min-height: 120px;
 }
+
+/* Trip Stamps モーダル */
+.stamps-modal .modal-body {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.stamps-modal .stamps-modal-grid {
+  padding: 0.25rem 0;
+}
 .anime-loading, .anime-error {
   padding: 2rem;
   text-align: center;
@@ -1727,14 +1736,17 @@ select {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.trip-menu-nav-arrow .trip-menu-nav-arrow-mobile {
+  display: none;
+}
 .trip-menu-title-wrap {
   flex: 1;
   min-width: 0;
   text-align: center;
 }
 .trip-menu-nav-row .trip-menu-title {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 400;
   color: var(--text);
   margin: 0;
   line-height: 1.4;
@@ -1748,8 +1760,8 @@ select {
   border-bottom: none;
 }
 .trip-menu-nav-label {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 400;
   color: var(--text);
   margin: 0;
   line-height: 1.4;
@@ -1782,8 +1794,8 @@ select {
   margin-bottom: 0;
 }
 .trip-menu-title {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 400;
   color: var(--text);
   margin: 0 0 0.35rem;
   line-height: 1.4;
@@ -1982,6 +1994,9 @@ select {
 }
 .trip-menu-controls .btn {
   flex: 1;
+}
+.trip-menu-controls .trip-menu-btn-text-mobile {
+  display: none;
 }
 .trip-menu-travelogue-info {
   font-size: 0.8rem;
@@ -2866,6 +2881,54 @@ select {
   }
   .public-trips-panel .trip-menu-travelogue-date {
     color: rgba(255, 255, 255, 0.7);
+  }
+  /* モバイル：トリップ詳細ヘッダーをシンプルに << トリップ説明 >> */
+  .trip-menu-header-section {
+    background: transparent;
+    border-radius: 0;
+    padding: 0.5rem 0;
+    margin-bottom: 0.5rem;
+  }
+  .public-trips-panel .trip-menu-header-section {
+    background: transparent;
+  }
+  .trip-menu-header-section .trip-menu-meta {
+    display: none !important;
+  }
+  .trip-menu-nav-arrow .trip-menu-nav-arrow-desktop {
+    display: none;
+  }
+  .trip-menu-nav-arrow .trip-menu-nav-arrow-mobile {
+    display: inline;
+  }
+  .trip-menu-nav-arrow {
+    width: auto;
+    min-width: 2.5rem;
+    padding: 0 0.35rem;
+    font-size: 1.1rem;
+  }
+  /* モバイル：トリップ詳細の MAP を非表示、サムネイルは残す */
+  .trip-menu-map-section .trip-menu-map {
+    display: none !important;
+  }
+  /* モバイル：アニメボタンは表示、アニメサムネイルは非表示 */
+  .trip-menu-anime-all-wrap {
+    display: none !important;
+  }
+  /* モバイル：スタンプボタンは表示、TRIP STAMPS セクションは非表示 */
+  .trip-menu-stamps {
+    display: none !important;
+  }
+  /* モバイル：前へ→<<、次へ→>> */
+  .trip-menu-controls .trip-menu-btn-text-desktop {
+    display: none;
+  }
+  .trip-menu-controls .trip-menu-btn-text-mobile {
+    display: inline;
+  }
+  /* モバイル：再生秒数選択を非表示（デフォルト3秒） */
+  .trip-menu-interval-select {
+    display: none !important;
   }
   .public-trips-title {
     display: none;
