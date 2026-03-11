@@ -160,6 +160,8 @@ let gpxData = null;
 let gpxTrackPoints = []; // { lat, lon, time, ele, speed, temp, hr } - 各trkptの詳細データ
 let publicTrips = []; // デプロイ時に含まれる公開トリップ（public-trips.json）
 let _currentViewingTripId = null; // スタンプ保存用（loadTrip/loadTripAndShowPhotoで設定）
+let _addPointMode = false;
+let _addPointMapClickHandler = null;
 let _pendingExportBlob = null;
 let _pendingExportCount = 0;
 let _pendingExportFilename = 'public-trips.json';
@@ -600,7 +602,7 @@ function extractPdfDataFromTravelogueHtml(html) {
   }
 }
 
-/** 写真のメタデータ（ランドマーク・説明・URL）をDBに直接保存。既存トリップの写真データを保持したまま更新 */
+/** 写真のメタデータ（ランドマーク・説明・URL）をDBに直接保存。既存トリップの写真データを保持したまま更新。ポイントの場合は説明を名称としても使用 */
 async function savePhotoMetadataToDB(tripId, photoIndex, metadata) {
   const trip = await loadTripFromDB(tripId);
   if (!trip) return false;
@@ -610,6 +612,8 @@ async function savePhotoMetadataToDB(tripId, photoIndex, metadata) {
   p.landmarkName = metadata.landmarkName;
   p.description = metadata.description;
   p.url = metadata.url;
+  if (metadata.name != null) p.name = metadata.name;
+  if (metadata.placeName != null) p.placeName = metadata.placeName;
   trip.updatedAt = Date.now();
   await saveTripToDB(trip);
   return true;
@@ -642,6 +646,75 @@ function setMapToOsm() {
   if (aerialLabelsLayer && map.hasLayer(aerialLabelsLayer)) map.removeLayer(aerialLabelsLayer);
   if (aerialLayer && map.hasLayer(aerialLayer)) map.removeLayer(aerialLayer);
   osmLayer.addTo(map);
+}
+
+/** 地図内の地名検索（Nominatim API・デスクトップのみ） */
+function initMapSearch() {
+  const input = document.getElementById('mapSearchInput');
+  const resultsEl = document.getElementById('mapSearchResults');
+  if (!input || !resultsEl || !map) return;
+
+  let searchTimeout = null;
+  const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+
+  function hideResults() {
+    resultsEl.classList.remove('visible');
+    resultsEl.innerHTML = '';
+  }
+
+  function showResults(items) {
+    resultsEl.innerHTML = items.map((r) => {
+      const name = escapeHtml(r.display_name || r.name || '');
+      const type = escapeHtml(r.type || r.class || '');
+      return `<div class="map-search-result-item" data-lat="${r.lat}" data-lng="${r.lon}"><span class="result-name">${name}</span>${type ? `<span class="result-type">${type}</span>` : ''}</div>`;
+    }).join('');
+    resultsEl.classList.add('visible');
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    const q = input.value.trim();
+    if (q.length < 2) {
+      hideResults();
+      return;
+    }
+    searchTimeout = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q, format: 'json', limit: '5', 'accept-language': 'ja' });
+        const res = await fetch(`${NOMINATIM_URL}?${params}`, {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'AirGo/1.0 (map place search)',
+          },
+        });
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          showResults(data);
+        } else {
+          hideResults();
+        }
+      } catch (_) {
+        hideResults();
+      }
+    }, 300);
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(hideResults, 150);
+  });
+
+  resultsEl.addEventListener('click', (e) => {
+    const item = e.target.closest('.map-search-result-item');
+    if (!item) return;
+    const lat = parseFloat(item.dataset.lat);
+    const lng = parseFloat(item.dataset.lng);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      map.setView([lat, lng], 15);
+      input.value = item.querySelector('.result-name')?.textContent || '';
+      hideResults();
+      setStatus('');
+    }
+  });
 }
 
 function setStatus(msg, isError = false) {
@@ -985,14 +1058,17 @@ function sortPhotosByGpxOrder() {
 }
 
 function buildPhotoPopupHtml(photo, index) {
-  const place = photo.placeName ? `📍 ${photo.placeName}` : '';
+  const hasGps = photo.lat != null && photo.lng != null;
   const hasLandmark = toLandmarkValue(photo.landmarkNo) != null || toLandmarkValue(photo.landmarkName) != null;
   const landmarkText = hasLandmark ? [photo.landmarkNo, photo.landmarkName].filter(Boolean).join(' ') : '';
   const landmarkHtml = hasLandmark
     ? `<div class="popup-photo-landmark-watermark">${escapeHtml(landmarkText)}</div>`
     : '';
-  const placeOverlayHtml = place
-    ? `<div class="popup-photo-place-overlay">${escapeHtml(place)}</div>`
+  const placeOverlayText = hasGps && photo.placeName
+    ? `📍 ${photo.placeName}`
+    : (hasLandmark ? landmarkText : '');
+  const placeOverlayHtml = placeOverlayText
+    ? `<div class="popup-photo-place-overlay">${escapeHtml(placeOverlayText)}</div>`
     : '';
   const desc = photo.description ? photo.description.trim() : '';
   const hasDesc = desc.length > 0;
@@ -1006,7 +1082,7 @@ function buildPhotoPopupHtml(photo, index) {
     : '';
   const imgHtml = photo.url
     ? `<div class="popup-photo-img-wrap popup-photo-clickable" data-photo-index="${index}" role="button" tabindex="0" title="クリックで大きく表示">${landmarkHtml}${placeOverlayHtml}<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}" class="popup-photo-img"></div>`
-    : '';
+    : (hasPhotoData(photo) ? '' : `<div class="popup-photo-point-placeholder">${landmarkHtml}${placeOverlayHtml}<span class="popup-photo-point-icon">📍</span><span class="popup-photo-point-name">${escapeHtml(photo.placeName || photo.landmarkName || photo.name || 'ポイント')}</span>${isEditor() ? '<button type="button" class="popup-photo-add-photo-btn" data-photo-index="' + index + '">写真を追加</button>' : ''}</div>`);
   const nameHtml = showName
     ? `<span class="popup-photo-name">${escapeHtml(photo.name)}</span>`
     : '';
@@ -1024,6 +1100,74 @@ function buildPhotoPopupHtml(photo, index) {
       ${urlHtml}
     </div>
   `;
+}
+
+function startAddPointMode() {
+  if (!isEditor()) {
+    setStatus('ポイント追加にはログインが必要です', true);
+    return;
+  }
+  if (!map) {
+    setStatus('地図の読み込みを待っています…', true);
+    return;
+  }
+  if (currentTripId?.startsWith('public_')) {
+    setStatus('公開トリップにはポイントを追加できません', true);
+    return;
+  }
+  if (!currentTripId && !isNewTrip) {
+    setStatus('先に「新規」でトリップを作成するか、トリップを読み込んでください', true);
+    return;
+  }
+  _addPointMode = true;
+  setStatus('地図上をクリックしてポイントの位置を選択してください');
+  if (_addPointMapClickHandler) {
+    map.off('click', _addPointMapClickHandler);
+  }
+  _addPointMapClickHandler = (e) => {
+    if (!_addPointMode) return;
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    const name = prompt('ポイントの名称を入力してください', '');
+    if (name == null) return;
+    const trimmed = String(name).trim() || 'ポイント';
+    _addPointMode = false;
+    map.off('click', _addPointMapClickHandler);
+    _addPointMapClickHandler = null;
+    setStatus('');
+    const point = {
+      lat,
+      lng,
+      name: trimmed,
+      placeName: trimmed,
+      landmarkName: trimmed,
+      description: null,
+      photoUrl: null,
+      url: null,
+      data: null,
+    };
+    photos.push(point);
+    photos.forEach((p, i) => { p._dbIndex = i; });
+    currentIndex = photos.length - 1;
+    addPhotoMarkers();
+    renderAllPhotosStrip();
+    showPhotoWithPopup(currentIndex);
+    scheduleAutoSave();
+    setStatus(`ポイント「${trimmed}」を追加しました`);
+    if (document.getElementById('allPhotosThumbnails')?.classList.contains('visible')) {
+      renderAllPhotosStrip();
+    }
+  };
+  map.on('click', _addPointMapClickHandler);
+}
+
+function cancelAddPointMode() {
+  _addPointMode = false;
+  if (map && _addPointMapClickHandler) {
+    map.off('click', _addPointMapClickHandler);
+    _addPointMapClickHandler = null;
+  }
+  setStatus('');
 }
 
 function addPhotoMarkers() {
@@ -1136,7 +1280,7 @@ function showPhoto(index, options = {}) {
       map.removeLayer(photoPopup);
       photoPopup = null;
     }
-  } else if (popupOnly && map && photo.url) {
+  } else if (popupOnly && map && (photo.url || (photo.lat != null && photo.lng != null))) {
     if (photoPopup) map.removeLayer(photoPopup);
     const center = map.getCenter();
     photoPopup = L.popup({ maxWidth: 488, className: 'photo-popup' })
@@ -1383,17 +1527,36 @@ function renderAllPhotosStrip() {
   strip.innerHTML = '';
   const canEdit = isEditor();
   const fragment = document.createDocumentFragment();
+  const canAddPoint = canEdit && (currentTripId || isNewTrip) && !currentTripId?.startsWith('public_');
+  if (canAddPoint) {
+    const addWrap = document.createElement('div');
+    addWrap.className = 'all-photo-thumb-wrap all-photo-add-point-wrap';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'all-photo-thumb all-photo-add-point';
+    addBtn.title = '地図上をクリックしてポイントを追加';
+    addBtn.innerHTML = '<span class="all-photo-add-point-icon">📍</span><span class="all-photo-add-point-label">+</span>';
+    addWrap.appendChild(addBtn);
+    fragment.appendChild(addWrap);
+  }
   photos.forEach((photo, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'all-photo-thumb-wrap';
     const div = document.createElement('div');
-    div.className = 'all-photo-thumb' + (i === currentIndex ? ' active' : '');
-    div.title = photo.name;
-    const img = document.createElement('img');
-    img.src = photo.url || '';
-    img.alt = photo.name;
-    img.loading = 'lazy';
-    div.appendChild(img);
+    div.className = 'all-photo-thumb' + (i === currentIndex ? ' active' : '') + (!hasPhotoData(photo) ? ' all-photo-thumb-point' : '');
+    div.title = photo.name || (photo.placeName || photo.landmarkName || 'ポイント');
+    if (hasPhotoData(photo)) {
+      const img = document.createElement('img');
+      img.src = photo.url || '';
+      img.alt = photo.name;
+      img.loading = 'lazy';
+      div.appendChild(img);
+    } else {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'all-photo-thumb-placeholder';
+      placeholder.innerHTML = '<span class="all-photo-thumb-placeholder-icon">📍</span><span class="all-photo-thumb-placeholder-name">' + escapeHtml((photo.placeName || photo.landmarkName || photo.name || 'ポイント').slice(0, 8)) + '</span>';
+      div.appendChild(placeholder);
+    }
     div.onclick = (e) => {
       if (!e.target.closest('.all-photo-thumb-actions')) {
         showPhotoWithPopup(i);
@@ -1517,6 +1680,24 @@ function buildMinimalPhotoForDB(p) {
   if (p.description && String(p.description).trim()) o.description = p.description.trim();
   if (p.url && String(p.url).trim()) o.url = p.url.trim();
   return o;
+}
+
+/** ポイント（写真なし）用の保存オブジェクトを構築 */
+function buildMinimalPointForDB(p) {
+  const o = { name: p.name || 'ポイント', lat: p.lat, lng: p.lng };
+  if (p.placeName && String(p.placeName).trim()) o.placeName = p.placeName.trim();
+  const ln = toLandmarkValue(p.landmarkNo);
+  if (ln != null) o.landmarkNo = ln;
+  const lm = toLandmarkValue(p.landmarkName);
+  if (lm != null) o.landmarkName = lm;
+  if (p.description && String(p.description).trim()) o.description = p.description.trim();
+  if (p.url && String(p.url).trim()) o.url = p.url.trim();
+  return o;
+}
+
+/** 写真データがあるか（ポイントのみでないか） */
+function hasPhotoData(p) {
+  return !!(p?.file || p?.data || (p?.url && p.url.startsWith('data:')));
 }
 
 function fileToBase64(file) {
@@ -1713,7 +1894,7 @@ async function fetchTravelBlogContent(url) {
 }
 
 /** AI で旅行記テキストを生成 */
-async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummaries, gpxMeta, blogContent = null, stampStatus = []) {
+async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummaries, gpxMeta, blogContent = null, stampStatus = [], gpxDetail = null) {
   const apiKey = getAiApiKey()?.trim();
   if (!apiKey) {
     throw new Error('AI API Key が設定されていません。ログイン後、メニュー → AI 設定 から API Key を入力してください。');
@@ -1723,9 +1904,10 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
     `トリップ名: ${tripName}`,
     tripDesc ? `説明: ${tripDesc}` : '',
     tripUrl ? `リンク: ${tripUrl}` : '',
-    gpxMeta ? `ルート情報: ${gpxMeta}` : '',
+    gpxMeta ? `ルート情報（GPX）: ${gpxMeta}` : '',
+    gpxDetail ? `GPX詳細（旅行記に必ず記述すること）: ${gpxDetail}` : '',
     '',
-    '写真・場所の情報:',
+    '写真・場所の情報（位置情報から主な訪問地を把握し、「〇〇の旅」形式で冒頭に含めること）:',
     ...photoSummaries.map((p, i) => `[${i + 1}] ${p}`)
   ];
   if (blogContent) {
@@ -1738,12 +1920,12 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
   }
   const summary = summaryParts.filter(Boolean).join('\n');
 
-  const systemPrompt = `あなたは旅行記のライターです。与えられたトリップの情報（名前、説明、写真の場所・説明、ルート情報${blogContent ? '、リンクされた旅行ブログの内容' : ''}${stampStatus.length > 0 ? '、スタンプラリーの状態' : ''}）をもとに、読みやすい旅行記を日本語で書いてください。${blogContent ? ' 旅行ブログに書かれているエピソードや感想を活かしつつ、写真・場所の情報と整合する形でまとめてください。' : ''}${stampStatus.length > 0 ? ' 締めの部分でスタンプラリーの達成状況（例：〇〇/16で完了）に触れてください。' : ''}
+  const systemPrompt = `あなたは旅行記のライターです。与えられたトリップの情報（名前、説明、写真の場所・説明、GPXの日付・移動距離・所要時間${blogContent ? '、リンクされた旅行ブログの内容' : ''}${stampStatus.length > 0 ? '、スタンプラリーの状態' : ''}）をもとに、読みやすい旅行記を日本語で書いてください。${blogContent ? ' 旅行ブログに書かれているエピソードや感想を活かしつつ、写真・場所の情報と整合する形でまとめてください。' : ''}${stampStatus.length > 0 ? ' 締めの部分でスタンプラリーの達成状況（例：〇〇/16で完了）に触れてください。' : ''}
 
 必ず以下の形式で出力してください：
 ---
-冒頭
-（旅の概要と印象を2〜3段落で）
+旅の概要
+（写真の位置情報から主な訪問地を把握し、「〇〇の旅」「〇〇と〇〇を巡る旅」のような形式で始めること。GPXの日付・移動距離・所要時間があれば必ず記述すること。旅の概要と印象を2〜3段落で）
 
 [1]
 （写真1の場所について、その場所を訪れた時の様子や感想を2〜4文で）
@@ -2253,7 +2435,7 @@ function parseTravelogueText(text) {
     const firstBlock = mainPart.match(/^([\s\S]*?)(?=\[\d+\])/);
     result.intro = (firstBlock ? firstBlock[1] : mainPart).trim();
   }
-  result.intro = (result.intro || '').replace(/^冒頭\s*\n?/, '');
+  result.intro = (result.intro || '').replace(/^(冒頭|旅の概要)\s*\n?/, '');
   return result;
 }
 
@@ -2300,15 +2482,6 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
     return [no, nm].filter(Boolean).join(' ') || '_other';
   };
 
-  const wikipediaCache = new Map();
-  const getWikipedia = async (name) => {
-    if (!name || name === '_other') return null;
-    if (wikipediaCache.has(name)) return wikipediaCache.get(name);
-    const summary = await fetchWikipediaSummary(name);
-    wikipediaCache.set(name, summary);
-    return summary;
-  };
-
   // 写真の表示順をキープしつつ、ランドマークが変わるタイミングでセクション分け
   const sections = [];
   let currentSection = null;
@@ -2326,8 +2499,7 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
 
     if (key !== currentKey) {
       currentKey = key;
-      const wikiSummary = p.landmarkName ? await getWikipedia(p.landmarkName) : null;
-      currentSection = { sectionTitle, wikiSummary, items: [] };
+      currentSection = { sectionTitle, items: [] };
       sections.push(currentSection);
     }
 
@@ -2352,7 +2524,6 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
     }
     pdfSections.push({
       sectionTitle: sec.sectionTitle === 'その他' ? '' : sec.sectionTitle,
-      wikiSummary: sec.wikiSummary || '',
       photos: photoData
     });
   }
@@ -2375,9 +2546,6 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
 
   const sectionsHtml = sections.map(sec => {
     const titleHtml = sec.sectionTitle === 'その他' ? '' : `<h2 class="travelogue-section-title">${escapeHtml(sec.sectionTitle)}</h2>`;
-    const wikiHtml = sec.wikiSummary
-      ? `<div class="travelogue-wikipedia"><p class="travelogue-wikipedia-label">出典: Wikipedia</p><p class="travelogue-wikipedia-summary">${escapeHtml(sec.wikiSummary).replace(/\n/g, '<br>')}</p></div>`
-      : '';
     const itemsHtml = sec.items.map(({ imgSrc, placeName, desc }) => `
       <div class="travelogue-item">
         <div class="travelogue-photo"><img src="${imgSrc}" alt="${escapeHtml(placeName)}"></div>
@@ -2386,7 +2554,7 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
           <p>${escapeHtml(desc).replace(/\n/g, '<br>')}</p>
         </div>
       </div>`).join('');
-    return `<section class="travelogue-section">${titleHtml}${wikiHtml}<div class="travelogue-section-items">${itemsHtml}</div></section>`;
+    return `<section class="travelogue-section">${titleHtml}<div class="travelogue-section-items">${itemsHtml}</div></section>`;
   }).join('');
 
   return `<!DOCTYPE html>
@@ -2409,9 +2577,6 @@ async function buildTravelogueHtml(tripName, tripDesc, tripUrl, parsed, routePoi
     .travelogue-text p { margin: 0; line-height: 1.7; }
     .travelogue-section { margin: 2.5rem 0; padding-top: 1.5rem; border-top: 1px solid #eee; }
     .travelogue-section-title { font-size: 1.25rem; margin: 0 0 1rem; color: #e1306c; }
-    .travelogue-wikipedia { margin: 1rem 0; padding: 1rem; background: #f8f8f8; border-radius: 8px; border-left: 4px solid #36c; }
-    .travelogue-wikipedia-label { font-size: 0.75rem; color: #666; margin: 0 0 0.5rem; }
-    .travelogue-wikipedia-summary { margin: 0; font-size: 0.9rem; line-height: 1.7; }
     .travelogue-actions { margin: 2rem 0 1rem; }
     .travelogue-pdf-btn { padding: 0.6rem 1.5rem; font-size: 1.1rem; border: none; border-radius: 8px; cursor: pointer; background: #e1306c; color: #fff; }
     .travelogue-pdf-btn:hover { background: #c41e5a; }
@@ -2615,6 +2780,12 @@ async function generateTraveloguePdf() {
     gpxSummary?.distanceKm != null ? (gpxSummary.distanceKm < 1 ? (gpxSummary.distanceKm * 1000).toFixed(0) + 'm' : gpxSummary.distanceKm.toFixed(1) + 'km') : null,
     gpxSummary?.avgSpeedKmh != null ? formatSpeed(gpxSummary.avgSpeedKmh) : null
   ].filter(Boolean).join(' ');
+  const gpxDetailParts = [];
+  if (gpxSummary?.dateStr) gpxDetailParts.push(`日付: ${gpxSummary.dateStr}`);
+  if (gpxSummary?.distanceKm != null) gpxDetailParts.push(`移動距離: ${gpxSummary.distanceKm < 1 ? (gpxSummary.distanceKm * 1000).toFixed(0) + 'm' : gpxSummary.distanceKm.toFixed(1) + 'km'}`);
+  if (gpxSummary?.durationHours != null) gpxDetailParts.push(`所要時間: ${formatDuration(gpxSummary.durationHours)}`);
+  if (gpxSummary?.avgSpeedKmh != null) gpxDetailParts.push(`平均時速: ${formatSpeed(gpxSummary.avgSpeedKmh)}`);
+  const gpxDetail = gpxDetailParts.length > 0 ? gpxDetailParts.join('、') : null;
 
   const photoSummaries = photos.slice(0, 30).map((p, i) => {
     const parts = [];
@@ -2638,14 +2809,14 @@ async function generateTraveloguePdf() {
   const stampStatus = getStampStatusForTrip(tripId);
   let travelogueText = '';
   try {
-    travelogueText = await generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummaries, gpxMeta, blogContent, stampStatus);
+    travelogueText = await generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummaries, gpxMeta, blogContent, stampStatus, gpxDetail);
   } catch (err) {
     setStatus(err.message || 'AI 生成に失敗しました', true);
     if (btn) { btn.disabled = false; btn.textContent = '📝 旅行記生成'; }
     return;
   }
 
-  setStatus('旅行記を生成中…（Wikipedia参照を取得）');
+  setStatus('旅行記を生成中…');
 
   const parsed = parseTravelogueText(travelogueText);
   const routePoints = getRoutePointsForMap();
@@ -2822,13 +2993,13 @@ async function autoSaveTrip() {
         mime = p.mime || 'image/jpeg';
       }
     }
-    if (!data) return null;
-    return buildMinimalPhotoForDB({
-      ...p,
-      data,
-      mime,
-      url: p.photoUrl || p.url,
-    });
+    if (data) {
+      return buildMinimalPhotoForDB({ ...p, data, mime, url: p.photoUrl || p.url });
+    }
+    if (p.lat != null && p.lng != null) {
+      return buildMinimalPointForDB(p);
+    }
+    return null;
   }))).filter(Boolean);
   if (storedPhotos.length === 0) return;
 
@@ -2858,7 +3029,7 @@ function scheduleAutoSave() {
   _autoSaveTimer = setTimeout(() => autoSaveTrip(), 1500);
 }
 
-async function saveTrip() {
+async function saveTrip(opts = {}) {
   if (!isEditor()) {
     setStatus('保存するにはログインしてください', true);
     return false;
@@ -2869,7 +3040,7 @@ async function saveTrip() {
     return false;
   }
   if (photos.length === 0) {
-    setStatus('写真がありません', true);
+    setStatus('写真またはポイントを追加してください', true);
     return false;
   }
   if (!currentTripId && !isNewTrip) {
@@ -2894,17 +3065,17 @@ async function saveTrip() {
         mime = p.mime || 'image/jpeg';
       }
     }
-    if (!data) return null;
-    return buildMinimalPhotoForDB({
-      ...p,
-      data,
-      mime,
-      url: p.photoUrl || p.url,
-    });
+    if (data) {
+      return buildMinimalPhotoForDB({ ...p, data, mime, url: p.photoUrl || p.url });
+    }
+    if (p.lat != null && p.lng != null) {
+      return buildMinimalPointForDB(p);
+    }
+    return null;
   })).then(arr => arr.filter(Boolean));
 
   if (storedPhotos.length === 0) {
-    setStatus('写真のデータを読み込めませんでした。再度アップロードしてください。', true);
+    setStatus('写真またはポイントを追加してください。', true);
     return false;
   }
 
@@ -2942,11 +3113,12 @@ async function saveTrip() {
   await renderPublicTripsPanel();
   await renderTripListPanel();
   setStatus(`「${name}」を保存しました`);
-  if (isEditor()) openTripListPanel();
+  if (isEditor() && !opts?.skipOpenTripList) openTripListPanel();
   return true;
 }
 
 async function loadTrip() {
+  cancelAddPointMode();
   const id = document.getElementById('tripSelect').value;
   if (!id) {
     setStatus('トリップを選択してください', true);
@@ -2993,7 +3165,7 @@ async function loadTrip() {
     landmarkName: toLandmarkValue(p.landmarkName),
     description: p.description || null,
     photoUrl: p.url || null,
-    url: base64ToUrl(p.mime, p.data),
+    url: p.data ? base64ToUrl(p.mime, p.data) : null,
     data: p.data,
     mime: p.mime,
     _dbIndex: i,
@@ -3029,9 +3201,9 @@ async function loadTrip() {
 
   fitMapToFullExtent();
   if (photos.length > 0) {
-    document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
     showPhoto(0, { popupOnly: true, skipMapZoom: true });
   }
+  document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
   const needGeocode = photos.some(p => p.lat != null && !p.placeName);
   if (needGeocode) {
     setStatus('地名を取得中…');
@@ -3040,10 +3212,11 @@ async function loadTrip() {
   }
   updateTripInfoDisplay(trip);
   updateSaveButtonState();
-  setStatus(`「${trip.name}」を読み込みました。${isPublicTrip ? '' : '写真を追加できます。'}`);
+  setStatus(`「${trip.name}」を読み込みました。${isPublicTrip ? '' : '写真・ポイントを追加できます。'}`);
 }
 
 async function loadTripAndShowPhoto(tripId, photoIndex) {
+  cancelAddPointMode();
   let trip = null;
   if (tripId.startsWith('public_')) {
     const origId = tripId.slice(7);
@@ -3077,7 +3250,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
     landmarkName: toLandmarkValue(p.landmarkName),
     description: p.description || null,
     photoUrl: p.url || null,
-    url: base64ToUrl(p.mime, p.data),
+    url: p.data ? base64ToUrl(p.mime, p.data) : null,
     data: p.data,
     mime: p.mime,
     _dbIndex: i,
@@ -3115,9 +3288,9 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   const idx = Math.min(photoIndex, photos.length - 1);
   if (photos.length > 0) {
     fitMapToFullExtent();
-    document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
     if (idx >= 0) showPhoto(idx, { popupOnly: true, skipMapZoom: true });
   }
+  document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
   const needGeocode = photos.some(p => p.lat != null && !p.placeName);
   if (needGeocode) {
     setStatus('地名を取得中…');
@@ -3128,7 +3301,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   updateSaveButtonState();
   closeTripListPanel();
   document.getElementById('tripSelect').value = tripId;
-  setStatus(`「${trip.name}」を読み込みました`);
+  setStatus(`「${trip.name}」を読み込みました。${tripId.startsWith('public_') ? '' : '写真・ポイントを追加できます。'}`);
 }
 
 function updateTripInfoDisplay(trip) {
@@ -3253,6 +3426,7 @@ function updateTripInfoDisplay(trip) {
 }
 
 function clearCurrentTrip() {
+  cancelAddPointMode();
   photos.forEach(p => {
     if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
   });
@@ -4491,6 +4665,7 @@ async function compressAnimeForExport(animeList, maxDim, thumbMax, quality) {
 }
 
 async function compressTripsForExport(trips, targetBytes) {
+  if (!trips?.length) return trips;
   const totalPhotos = trips.reduce((s, t) => s + (t.photos?.length || 0), 0);
   const totalAnime = trips.reduce((s, t) => s + (t.animeList?.length || 0), 0);
   if (totalPhotos === 0 && totalAnime === 0) return trips;
@@ -4505,9 +4680,12 @@ async function compressTripsForExport(trips, targetBytes) {
         const photos = [];
         for (const p of trip.photos) {
           const src = await getPhotoDataForExport(p);
-          if (!src?.data) continue;
-          const enc = await compressImageForExport(src.mime, src.data, maxDim, quality);
-          if (enc) photos.push({ ...p, data: enc.data, mime: enc.mime || 'image/jpeg' });
+          if (src?.data) {
+            const enc = await compressImageForExport(src.mime, src.data, maxDim, quality);
+            if (enc) photos.push({ ...p, data: enc.data, mime: enc.mime || 'image/jpeg' });
+          } else if (p.lat != null && p.lng != null) {
+            photos.push({ ...p, data: undefined, mime: undefined });
+          }
         }
         t.photos = photos;
       }
@@ -4769,7 +4947,11 @@ async function exportPublicTrips() {
     setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
     return;
   }
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  if (blob.size === 0) {
+    setStatus('エクスポートデータの作成に失敗しました。', true);
+    return;
+  }
   const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
   setStatus(`公開トリップ ${displayTrips.length}件を圧縮しました（${sizeMB}MB）`);
 
@@ -4811,8 +4993,7 @@ async function triggerExportDownload() {
         types: [{ accept: { 'application/json': ['.json'] }, description: 'JSON' }],
       });
       const writable = await handle.createWritable();
-      const text = await blob.text();
-      await writable.write(text);
+      await writable.write(blob);
       await writable.close();
       setStatus(`${count}件を保存しました。`);
     } else {
@@ -4823,8 +5004,10 @@ async function triggerExportDownload() {
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
       setStatus(`${count}件をダウンロードしました。`);
     }
   } catch (err) {
@@ -4957,10 +5140,11 @@ async function downloadIndexedDBTrips() {
         return;
       }
       setStatus('ファイルに書き込み中…');
+      const blobToWrite = new Blob([json], { type: 'application/json;charset=utf-8' });
       const writable = await fileHandle.createWritable();
-      await writable.write(json);
+      await writable.write(blobToWrite);
       await writable.close();
-      const sizeMB = (json.length / 1024 / 1024).toFixed(1);
+      const sizeMB = (blobToWrite.size / 1024 / 1024).toFixed(1);
       setStatus(`トリップ ${trips.length}件を保存しました（${sizeMB}MB）`);
     } catch (err) {
       setStatus(err.message || '保存に失敗しました', true);
@@ -4996,7 +5180,11 @@ async function downloadIndexedDBTrips() {
       setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
       return;
     }
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    if (blob.size === 0) {
+      setStatus('エクスポートデータの作成に失敗しました。', true);
+      return;
+    }
     _pendingExportBlob = blob;
     _pendingExportCount = trips.length;
     _pendingExportFilename = filename;
@@ -5011,9 +5199,46 @@ async function downloadIndexedDBTrips() {
   }
 }
 
+/** 簡易版用：旅行記・アニメなしでトリップ＋写真のみをエクスポート */
+async function compressTripsForExportSimple(trips, targetBytes) {
+  if (!trips?.length) return trips;
+  const totalPhotos = trips.reduce((s, t) => s + (t.photos?.length || 0), 0);
+  if (totalPhotos === 0) return trips;
+
+  let quality = 0.5;
+  let maxDim = EXPORT_PHOTO_MAX_DIM;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result = [];
+    for (const trip of trips) {
+      const t = { ...trip };
+      delete t.travelogueHtml;
+      delete t.animeList;
+      if (trip.photos?.length) {
+        const photos = [];
+        for (const p of trip.photos) {
+          const src = await getPhotoDataForExport(p);
+          if (src?.data) {
+            const enc = await compressImageForExport(src.mime, src.data, maxDim, quality);
+            photos.push({ ...p, data: enc?.data ?? src.data, mime: enc?.mime ?? src.mime ?? 'image/jpeg' });
+          } else if (p.lat != null && p.lng != null) {
+            photos.push({ ...p, data: undefined, mime: undefined });
+          }
+        }
+        t.photos = photos;
+      }
+      result.push(t);
+    }
+    const testJson = JSON.stringify(result);
+    if (testJson.length <= targetBytes) return result;
+    quality = Math.max(0.2, quality - 0.06);
+    if (attempt >= 4) maxDim = Math.max(480, maxDim - 160);
+  }
+  return result;
+}
+
 async function downloadIndexedDBTripsSimple() {
   if (!isEditor()) return;
-  const filename = `indexeddb-trips-simple-${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = 'public-trips-simple.json';
   if ('showSaveFilePicker' in window) {
     let fileHandle;
     try {
@@ -5033,20 +5258,21 @@ async function downloadIndexedDBTripsSimple() {
         setStatus('IndexedDB にトリップがありません', true);
         return;
       }
-      setStatus(`圧縮中（${EXPORT_TARGET_SIZE_MB}MB以下に）…`);
+      setStatus(`トリップ ${trips.length}件を取得中…`);
       const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
-      const compressed = await compressTripsForExport(trips, targetBytes);
+      const compressed = await compressTripsForExportSimple(trips, targetBytes);
       const json = JSON.stringify(compressed);
       if (!json || json.length < 2) {
         setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
         return;
       }
       setStatus('ファイルに書き込み中…');
+      const blobToWrite = new Blob([json], { type: 'application/json;charset=utf-8' });
       const writable = await fileHandle.createWritable();
-      await writable.write(json);
+      await writable.write(blobToWrite);
       await writable.close();
-      const sizeMB = (json.length / 1024 / 1024).toFixed(1);
-      setStatus(`トリップ ${trips.length}件を保存しました（簡易版・${sizeMB}MB）`);
+      const sizeMB = (blobToWrite.size / 1024 / 1024).toFixed(1);
+      setStatus(`public-trips-simple.json を保存しました（${sizeMB}MB・圧縮済）`);
     } catch (err) {
       setStatus(err.message || '保存に失敗しました', true);
     }
@@ -5059,24 +5285,28 @@ async function downloadIndexedDBTripsSimple() {
       setStatus('IndexedDB にトリップがありません', true);
       return;
     }
-    setStatus(`圧縮中（${EXPORT_TARGET_SIZE_MB}MB以下に）…`);
+    setStatus(`トリップ ${trips.length}件を取得中…`);
     const targetBytes = EXPORT_TARGET_SIZE_MB * 1024 * 1024;
-    const compressed = await compressTripsForExport(trips, targetBytes);
+    const compressed = await compressTripsForExportSimple(trips, targetBytes);
     const json = JSON.stringify(compressed);
     if (!json || json.length < 2) {
       setStatus('エクスポートデータが空です。トリップに写真データが含まれているか確認してください。', true);
       return;
     }
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    if (blob.size === 0) {
+      setStatus('エクスポートデータの作成に失敗しました。', true);
+      return;
+    }
     _pendingExportBlob = blob;
     _pendingExportCount = trips.length;
     _pendingExportFilename = filename;
     applyExportDownloadLink();
     const msgEl = document.getElementById('exportReadyMessage');
     const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
-    if (msgEl) msgEl.textContent = `IndexedDB のトリップ ${trips.length}件（${sizeMB}MB・簡易版・圧縮済）の準備が完了しました。「ダウンロード」をクリックして保存してください。`;
+    if (msgEl) msgEl.textContent = `public-trips-simple.json（${trips.length}件・${sizeMB}MB・圧縮済）の準備が完了しました。「ダウンロード」をクリックして保存してください。`;
     document.getElementById('exportReadyModal')?.classList.add('open');
-    setStatus(`トリップ ${trips.length}件の準備が完了しました`);
+    setStatus(`public-trips-simple.json の準備が完了しました`);
   } catch (err) {
     setStatus(err.message || 'ダウンロードの準備に失敗しました', true);
   }
@@ -5103,14 +5333,17 @@ async function importTripsFromFile() {
         if (!trip.id || !trip.photos || !Array.isArray(trip.photos)) continue;
         const storedPhotos = [];
         for (const p of trip.photos) {
-          if (!p?.data) continue;
-          try {
-            const enc = await resizeBase64ToBase64(p.mime || 'image/jpeg', p.data, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
-            const data = enc?.data || p.data;
-            const mime = enc?.mime || p.mime || 'image/jpeg';
-            storedPhotos.push(buildMinimalPhotoForDB({ ...p, data, mime, url: p.url || p.photoUrl }));
-          } catch (_) {
-            storedPhotos.push(buildMinimalPhotoForDB({ ...p, url: p.url || p.photoUrl }));
+          if (p?.data) {
+            try {
+              const enc = await resizeBase64ToBase64(p.mime || 'image/jpeg', p.data, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
+              const data = enc?.data || p.data;
+              const mime = enc?.mime || p.mime || 'image/jpeg';
+              storedPhotos.push(buildMinimalPhotoForDB({ ...p, data, mime, url: p.url || p.photoUrl }));
+            } catch (_) {
+              storedPhotos.push(buildMinimalPhotoForDB({ ...p, url: p.url || p.photoUrl }));
+            }
+          } else if (p?.lat != null && p?.lng != null) {
+            storedPhotos.push(buildMinimalPointForDB(p));
           }
         }
         if (storedPhotos.length === 0) continue;
@@ -5386,6 +5619,7 @@ function closeTripListPanel() {
 /* --- 写真編集モーダル --- */
 let _photoEditTripId = null;
 let _photoEditIndex = null;
+let _photoEditIsPoint = false;
 let _photoEditPreviewUrl = null;
 
 function openPhotoEditModal(photoIndex) {
@@ -5399,10 +5633,20 @@ function openPhotoEditModal(photoIndex) {
   const photo = photos[photoIndex];
   if (!photo) return;
 
-  document.getElementById('photoEditPreview').innerHTML = `<img src="${photo.url}" alt="${escapeHtml(photo.name)}" loading="lazy">`;
+  _photoEditIsPoint = !hasPhotoData(photo);
+  const addPhotoField = document.getElementById('photoEditAddPhotoField');
+  const addPhotoInput = document.getElementById('photoEditAddPhotoInput');
+  if (addPhotoField) addPhotoField.style.display = _photoEditIsPoint ? '' : 'none';
+  if (addPhotoInput) addPhotoInput.value = '';
+
+  if (_photoEditIsPoint) {
+    document.getElementById('photoEditPreview').innerHTML = '<div class="photo-edit-point-preview"><span class="photo-edit-point-icon">📍</span><span>' + escapeHtml(photo.placeName || photo.landmarkName || photo.name || 'ポイント') + '</span></div>';
+  } else {
+    document.getElementById('photoEditPreview').innerHTML = `<img src="${photo.url}" alt="${escapeHtml(photo.name)}" loading="lazy">`;
+  }
   document.getElementById('photoEditLandmarkNo').value = photo.landmarkNo ?? '';
   document.getElementById('photoEditLandmarkName').value = photo.landmarkName ?? '';
-  document.getElementById('photoEditDesc').value = photo.description || '';
+  document.getElementById('photoEditDesc').value = photo.description || photo.name || photo.placeName || photo.landmarkName || '';
   document.getElementById('photoEditUrl').value = photo.photoUrl || '';
   document.getElementById('photoEditModal').classList.add('open');
 }
@@ -5414,16 +5658,23 @@ async function openPhotoEditModalFromTrip(tripId, photoIndex) {
   const p = trip.photos[photoIndex];
   _photoEditTripId = tripId;
   _photoEditIndex = photoIndex;
+  _photoEditIsPoint = !hasPhotoData(p);
 
   if (_photoEditPreviewUrl) {
     URL.revokeObjectURL(_photoEditPreviewUrl);
     _photoEditPreviewUrl = null;
   }
-  _photoEditPreviewUrl = base64ToUrl(p.mime, p.data);
-  document.getElementById('photoEditPreview').innerHTML = `<img src="${_photoEditPreviewUrl}" alt="${escapeHtml(p.name)}" loading="lazy">`;
+  const addPhotoField = document.getElementById('photoEditAddPhotoField');
+  if (addPhotoField) addPhotoField.style.display = _photoEditIsPoint ? '' : 'none';
+  if (_photoEditIsPoint) {
+    document.getElementById('photoEditPreview').innerHTML = '<div class="photo-edit-point-preview"><span class="photo-edit-point-icon">📍</span><span>' + escapeHtml(p.placeName || p.landmarkName || p.name || 'ポイント') + '</span></div>';
+  } else {
+    _photoEditPreviewUrl = base64ToUrl(p.mime, p.data);
+    document.getElementById('photoEditPreview').innerHTML = `<img src="${_photoEditPreviewUrl}" alt="${escapeHtml(p.name)}" loading="lazy">`;
+  }
   document.getElementById('photoEditLandmarkNo').value = p.landmarkNo ?? '';
   document.getElementById('photoEditLandmarkName').value = p.landmarkName ?? '';
-  document.getElementById('photoEditDesc').value = p.description || '';
+  document.getElementById('photoEditDesc').value = p.description || p.name || p.placeName || p.landmarkName || '';
   document.getElementById('photoEditUrl').value = p.url || '';
   document.getElementById('photoEditModal').classList.add('open');
 }
@@ -5436,6 +5687,7 @@ function closePhotoEditModal() {
   }
   _photoEditTripId = null;
   _photoEditIndex = null;
+  _photoEditIsPoint = false;
 }
 
 function showUrlPopup(url) {
@@ -5461,7 +5713,6 @@ async function savePhotoEdit() {
   const landmarkName = toLandmarkValue(document.getElementById('photoEditLandmarkName').value);
   const desc = document.getElementById('photoEditDesc').value.trim() || null;
   const url = document.getElementById('photoEditUrl').value.trim() || null;
-  const metadata = { landmarkNo, landmarkName, description: desc, url };
 
   if (!_photoEditTripId) {
     closePhotoEditModal();
@@ -5478,21 +5729,37 @@ async function savePhotoEdit() {
 
   // メモリ上の photos を更新（表示中のトリップの場合）
   if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
-    photos[_photoEditIndex].landmarkNo = landmarkNo;
-    photos[_photoEditIndex].landmarkName = landmarkName;
-    photos[_photoEditIndex].description = desc;
-    photos[_photoEditIndex].photoUrl = url;
+    const p = photos[_photoEditIndex];
+    p.landmarkNo = landmarkNo;
+    p.landmarkName = landmarkName;
+    p.description = desc;
+    p.photoUrl = url;
+    if (_photoEditIsPoint && desc) p.name = p.placeName = desc;
   }
 
+  const metadata = { landmarkNo, landmarkName, description: desc, url };
+  if (_photoEditIsPoint && desc) {
+    metadata.name = desc;
+    metadata.placeName = desc;
+  }
   let saved = false;
-  const dbIndex = (photos[_photoEditIndex]?._dbIndex != null) ? photos[_photoEditIndex]._dbIndex : _photoEditIndex;
+  const p = photos[_photoEditIndex];
+  const hasNewPhoto = p && (p.file || p.data);
   try {
-    saved = await savePhotoMetadataToDB(_photoEditTripId, dbIndex, metadata);
+    if (currentTripId === _photoEditTripId && hasNewPhoto) {
+      saved = await saveTrip({ skipOpenTripList: true });
+    } else {
+      const dbIndex = (p?._dbIndex != null) ? p._dbIndex : _photoEditIndex;
+      saved = await savePhotoMetadataToDB(_photoEditTripId, dbIndex, metadata);
+    }
   } catch (err) {
     console.error('savePhotoEdit error:', err);
   }
 
+  closePhotoEditModal();
+
   if (saved) {
+    closeTripListPanel();
     if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
       addPhotoMarkers();
       const strip = document.getElementById('allPhotosStrip');
@@ -5506,8 +5773,6 @@ async function savePhotoEdit() {
   } else {
     setStatus('保存に失敗しました。トリップを再度読み込んでお試しください。', true);
   }
-
-  closePhotoEditModal();
 }
 
 async function downloadVideo() {
@@ -5601,6 +5866,7 @@ async function downloadVideoWithErrorHandling() {
 
 async function setup() {
   initMap();
+  initMapSearch();
   await loadPublicTripsFromServer();
   updateEditorUI();
 
@@ -5728,7 +5994,8 @@ async function setup() {
     clearCurrentTrip();
     isNewTrip = true;
     document.getElementById('tripSelect').value = '';
-    setStatus('新規トリップを開始しました。写真をアップロードしてください。');
+    document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
+    setStatus('新規トリップを開始しました。写真をアップロードするか、「写真」をクリックして📍ボタンでポイントを追加してください。');
   };
   document.getElementById('deleteTripBtn').onclick = deleteTrip;
 
@@ -5757,6 +6024,16 @@ async function setup() {
   document.getElementById('allPhotosClose').onclick = () => {
     document.getElementById('allPhotosThumbnails').classList.remove('visible');
   };
+  const allPhotosStripEl = document.getElementById('allPhotosStrip');
+  if (allPhotosStripEl) {
+    allPhotosStripEl.addEventListener('click', (e) => {
+      if (e.target.closest('.all-photo-add-point')) {
+        e.preventDefault();
+        e.stopPropagation();
+        startAddPointMode();
+      }
+    });
+  }
 
   document.getElementById('exportPublicBtn').onclick = exportPublicTrips;
   document.getElementById('tripImportBtn').onclick = importTripsFromFile;
@@ -5810,6 +6087,31 @@ async function setup() {
     }
     if (e.target.id === 'photoEditModal') closePhotoEditModal();
   });
+  const photoEditAddPhotoInput = document.getElementById('photoEditAddPhotoInput');
+  if (photoEditAddPhotoInput) {
+    photoEditAddPhotoInput.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file || _photoEditIndex == null || !photos[_photoEditIndex]) return;
+      try {
+        const p = await loadPhotoWithExif(file);
+        const existing = photos[_photoEditIndex];
+        photos[_photoEditIndex] = {
+          ...existing,
+          file: p.file,
+          url: p.url,
+          name: existing.name || p.name,
+          lat: existing.lat ?? p.lat,
+          lng: existing.lng ?? p.lng,
+        };
+        document.getElementById('photoEditPreview').innerHTML = `<img src="${p.url}" alt="${escapeHtml(photos[_photoEditIndex].name)}" loading="lazy">`;
+        document.getElementById('photoEditAddPhotoField').style.display = 'none';
+        setStatus('写真を追加しました。保存をクリックしてトリップに反映してください。');
+      } catch (err) {
+        setStatus(err.message || '写真の読み込みに失敗しました', true);
+      }
+      e.target.value = '';
+    };
+  }
 
   document.getElementById('stampUploadClose').onclick = () => document.getElementById('stampUploadModal').classList.remove('open');
   document.getElementById('stampUploadModal').onclick = e => {
@@ -5971,6 +6273,16 @@ async function setup() {
       if (!isNaN(idx) && photos[idx]) {
         e.preventDefault();
         e.stopPropagation();
+        openPhotoEditModal(idx);
+      }
+    }
+    const addPhotoBtn = e.target.closest('.popup-photo-add-photo-btn');
+    if (addPhotoBtn && isEditor()) {
+      const idx = parseInt(addPhotoBtn.dataset.photoIndex, 10);
+      if (!isNaN(idx) && photos[idx]) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (map) map.closePopup();
         openPhotoEditModal(idx);
       }
     }

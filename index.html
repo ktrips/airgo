@@ -250,6 +250,10 @@
         </div>
         <div class="modal-body">
           <div class="photo-edit-preview" id="photoEditPreview"></div>
+          <div class="modal-field photo-edit-add-photo-field" id="photoEditAddPhotoField" style="display:none">
+            <label>写真を追加:</label>
+            <input type="file" id="photoEditAddPhotoInput" accept="image/*,.jpg,.jpeg,.JPG,.JPEG,.png,.PNG" class="modal-input">
+          </div>
           <div class="modal-field">
             <label for="photoEditLandmarkNo">ランドマーク番号:</label>
             <input type="text" id="photoEditLandmarkNo" class="modal-input" placeholder="例: 1, 2, 3（地図上に番号を表示）">
@@ -260,7 +264,7 @@
           </div>
           <div class="modal-field">
             <label for="photoEditDesc">説明:</label>
-            <textarea id="photoEditDesc" class="modal-input" rows="3" placeholder="写真の説明を入力"></textarea>
+            <textarea id="photoEditDesc" class="modal-input" rows="3" placeholder="写真の説明、またはポイントの名称を入力"></textarea>
           </div>
           <div class="modal-field">
             <label for="photoEditUrl">URL:</label>
@@ -277,6 +281,10 @@
       <button type="button" class="play-mode-stop-btn" id="playModeStopBtn" aria-label="停止" title="再生を停止">■ 停止</button>
       <div class="map-container">
         <div id="map"></div>
+        <div class="map-search-box desktop-only" id="mapSearchBox">
+          <input type="text" id="mapSearchInput" class="map-search-input" placeholder="地名を検索" autocomplete="off">
+          <div class="map-search-results" id="mapSearchResults"></div>
+        </div>
         <div class="map-trip-name-overlay" id="mapTripNameOverlay"></div>
         <div class="play-photo-overlay" id="playPhotoOverlay">
           <div class="play-overlay-buttons">
