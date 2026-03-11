@@ -1,0 +1,17 @@
+# Firebase Hosting デプロイ時に除外するファイル
+.git
+.github
+.gitignore
+.dockerignore
+*.md
+Dockerfile
+docker-entrypoint.sh
+nginx.conf.template
+cloudbuild.yaml
+deploy.sh
+deploy-firebase.sh
+DEPLOY.md
+.env
+*.log
+Arc/
+node_modules

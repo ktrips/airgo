@@ -105,6 +105,30 @@ function updateAiSettingsUI() {
   apiKeyInput.placeholder = providerSelect.value.startsWith('gemini') ? 'API Key を入力' : 'sk-... を入力';
 }
 
+/** オンライン時は Firestore を優先して使用するか */
+function useFirestoreAsPrimary() {
+  return navigator.onLine && !!window.firebaseDb && !!window.firebaseAuth?.currentUser;
+}
+
+/** DB インジケーターを更新（IndexedDB / Firestore / オフライン） */
+function updateDbIndicator() {
+  const el = document.getElementById('dbIndicator');
+  if (!el) return;
+  if (!navigator.onLine) {
+    el.textContent = 'オフライン (IndexedDB)';
+    el.className = 'db-indicator offline';
+    el.title = 'オフラインのためローカルの IndexedDB を使用しています';
+  } else if (useFirestoreAsPrimary()) {
+    el.textContent = '☁️ Firestore';
+    el.className = 'db-indicator firestore';
+    el.title = 'オンライン: Firestore に接続中。直近のデータを表示しています';
+  } else {
+    el.textContent = '💾 IndexedDB';
+    el.className = 'db-indicator indexeddb';
+    el.title = 'ローカルの IndexedDB を使用しています。Google ログインで Firestore に同期';
+  }
+}
+
 function updateEditorUI() {
   const isEd = isEditor();
   const authBtn = document.getElementById('authBtn');
@@ -137,6 +161,7 @@ function updateEditorUI() {
   if (uploadToFirestoreBtn) {
     uploadToFirestoreBtn.style.display = (isEd && window.firebaseDb && window.firebaseAuth?.currentUser) ? '' : 'none';
   }
+  updateDbIndicator();
 }
 
 const STORE_NAME = 'trips';
@@ -3316,6 +3341,10 @@ async function loadTrip() {
     trip = publicTrips.find(t => t.id === origId) || publicTrips.find(t => t.id === id);
     isPublicTrip = !!trip;
   }
+  if (!trip && useFirestoreAsPrimary()) {
+    trip = firestoreTrips.find(t => t.id === id);
+    isFirestoreTrip = !!trip;
+  }
   if (!trip) {
     trip = await loadTripFromDB(id);
   }
@@ -5360,7 +5389,8 @@ function downloadPublicTripsFromServer() {
   }
 }
 
-/** IndexedDB の全トリップを Firestore にアップロード（Google ログイン時のみ） */
+/** IndexedDB の全トリップを Firestore にアップロード（Google ログイン時のみ）
+ * トリップ、写真、アニメ、旅行記、スタンプを全て含む */
 async function uploadIndexedDBToFirestore() {
   if (!window.firebaseDb || !window.firebaseAuth?.currentUser) {
     setStatus('Google でログインしてください', true);
@@ -5372,14 +5402,25 @@ async function uploadIndexedDBToFirestore() {
       setStatus('IndexedDB にトリップがありません', true);
       return;
     }
-    setStatus(`${dbTrips.length}件を Firestore にアップロード中…`);
+    setStatus(`${dbTrips.length}件を Firestore にアップロード中（写真・アニメ・旅行記・スタンプ含む）…`);
     let ok = 0;
     for (const trip of dbTrips) {
-      await saveTripToFirestore(trip);
+      const withExtras = { ...trip };
+      try {
+        const html = await loadTravelogueHtmlFromDB(trip.id);
+        if (html) withExtras.travelogueHtml = html;
+      } catch (_) {}
+      try {
+        const animeList = await getAnimeAllForTripDisplay(trip.id, trip.animeList);
+        if (animeList.length > 0) withExtras.animeList = animeList;
+      } catch (_) {}
+      const stampPhotos = collectStampPhotosForTrip(trip.id);
+      if (stampPhotos) withExtras.stampPhotos = stampPhotos;
+      await saveTripToFirestore(withExtras);
       ok++;
     }
     await refreshTripList();
-    setStatus(`${ok}件のトリップを Firestore にアップロードしました`);
+    setStatus(`${ok}件のトリップを Firestore にアップロードしました（写真・アニメ・旅行記・スタンプ含む）`);
     setTimeout(() => setStatus(''), 3000);
   } catch (err) {
     console.error('Firestore アップロードエラー:', err);
@@ -5447,38 +5488,52 @@ async function importTripsFromFile() {
   input.click();
 }
 
-async function refreshTripList() {
+/** IndexedDB + Firestore + 公開トリップをマージ（オンライン時は Firestore を優先） */
+async function getMergedTrips() {
   let dbTrips = [];
   try {
     dbTrips = await loadTripsFromDB() || [];
   } catch (err) {
     console.error('トリップ読み込みエラー:', err);
-    setStatus('トリップの読み込みに失敗しました。インポートで復元できます。', true);
   }
-  let allTrips = [...dbTrips];
+  const byId = new Map();
+  dbTrips.forEach(t => { byId.set(t.id, { ...t, _source: 'indexeddb' }); });
   publicTrips.forEach(t => {
-    if (!allTrips.some(x => x.id === t.id)) {
-      allTrips.push({ ...t, id: 'public_' + t.id, _isPublic: true });
-    }
+    const id = 'public_' + t.id;
+    if (!byId.has(id)) byId.set(id, { ...t, id, _isPublic: true, _source: 'public' });
   });
-  // Firebase が有効かつログイン中の場合、Firestore の自分のトリップをマージ（IndexedDB を優先）
   if (window.firebaseDb && window.firebaseAuth?.currentUser) {
     firestoreTrips = await loadTripsFromFirestore();
     firestoreTrips.forEach(t => {
-      if (!allTrips.some(x => x.id === t.id)) {
-        allTrips.push({ ...t });
+      const existing = byId.get(t.id);
+      const fsUpdated = t.updatedAt || 0;
+      const existingUpdated = existing?.updatedAt || 0;
+      if (!existing || (useFirestoreAsPrimary() && fsUpdated >= existingUpdated)) {
+        byId.set(t.id, { ...t, _source: 'firestore' });
       }
     });
   } else {
     firestoreTrips = [];
   }
+  let allTrips = [...byId.values()];
   if (!isEditor()) {
     allTrips = allTrips.filter(t => t.id?.startsWith('public_') || t._isPublic);
   }
+  return allTrips.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+async function refreshTripList() {
+  let allTrips;
+  try {
+    allTrips = await getMergedTrips();
+  } catch (err) {
+    setStatus('トリップの読み込みに失敗しました。インポートで復元できます。', true);
+    return;
+  }
+  updateDbIndicator();
   const select = document.getElementById('tripSelect');
   const prevVal = select.value;
   select.innerHTML = '<option value="">— 読み込む —</option>';
-  allTrips.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   allTrips.forEach(t => {
     const opt = document.createElement('option');
     opt.value = t.id;
@@ -5518,14 +5573,7 @@ async function deleteTrip() {
 let _tripListUrls = [];
 
 async function renderTripListPanel() {
-  const dbTrips = await loadTripsFromDB();
-  let allTrips = [...dbTrips];
-  publicTrips.forEach(t => {
-    if (!allTrips.some(x => x.id === t.id)) {
-      allTrips.push({ ...t, id: 'public_' + t.id, _isPublic: true });
-    }
-  });
-  if (!isEditor()) allTrips = allTrips.filter(t => t._isPublic);
+  const allTrips = await getMergedTrips();
   const body = document.getElementById('tripListBody');
   if (!body) return;
   body.innerHTML = '';
@@ -5565,6 +5613,7 @@ async function renderTripListPanel() {
         if (!confirm(`「${escapeHtml(trip.name)}」とその写真を削除しますか？`)) return;
         try {
           await deleteTripFromDB(origTripId);
+          await deleteTripFromFirestore(origTripId);
           await cleanupTripRelatedData(origTripId);
           if (currentTripId === origTripId) clearCurrentTrip();
           await refreshTripList();
@@ -6016,9 +6065,20 @@ async function setup() {
       if (user) {
         updateEditorUI();
         await refreshTripList();
+      } else {
+        updateDbIndicator();
       }
     });
   }
+
+  // オンライン/オフライン時に DB インジケーターを更新し、オンライン復帰時は Firestore から再取得
+  window.addEventListener('online', async () => {
+    updateDbIndicator();
+    if (useFirestoreAsPrimary()) await refreshTripList();
+  });
+  window.addEventListener('offline', () => {
+    updateDbIndicator();
+  });
 
   document.getElementById('helpBtn').onclick = () => {
     document.getElementById('helpModal').classList.add('open');

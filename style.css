@@ -117,9 +117,27 @@ body {
   font-size: 0.9rem;
   color: var(--text-muted);
   line-height: 1.5;
-  padding: 0 0 1rem;
+  padding: 0 0 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.db-indicator {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
   margin-bottom: 1rem;
-  border-bottom: 1px solid var(--border);
+  display: inline-block;
+}
+.db-indicator.firestore {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+.db-indicator.indexeddb {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+.db-indicator.offline {
+  background: #ffebee;
+  color: #c62828;
 }
 .header-trip-area {
   flex: 1;

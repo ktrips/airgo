@@ -4,5 +4,27 @@
     "location": "asia-northeast1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      ".firebaseignore",
+      ".git",
+      ".gitignore",
+      ".github",
+      "**/.*",
+      "**/node_modules/**",
+      "*.md",
+      "Dockerfile",
+      "docker-entrypoint.sh",
+      "nginx.conf.template",
+      "cloudbuild.yaml",
+      ".dockerignore",
+      "deploy.sh",
+      "deploy-firebase.sh",
+      "DEPLOY.md"
+    ]
   }
 }
