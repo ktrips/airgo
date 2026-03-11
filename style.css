@@ -287,8 +287,8 @@ body {
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.75rem;
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--trip-accent, var(--accent)) 18%, var(--bg));
+  border: 2px solid var(--trip-accent, var(--accent));
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
@@ -297,8 +297,8 @@ body {
 }
 .menu-mobile-trip-card:hover,
 .menu-mobile-trip-card:active {
-  border-color: var(--accent);
-  background: rgba(225, 48, 108, 0.08);
+  border-color: var(--trip-accent, var(--accent));
+  background: color-mix(in srgb, var(--trip-accent, var(--accent)) 15%, transparent);
 }
 .menu-mobile-trip-thumb {
   width: 48px;
@@ -348,6 +348,39 @@ body {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-bottom: 0.25rem;
+}
+.trip-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.trip-color-picker input[type="color"] {
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--bg);
+}
+.trip-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.trip-color-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.trip-color-swatch:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 .menu-input, .menu-select {
   width: 100%;
@@ -469,6 +502,7 @@ body {
   cursor: pointer;
   user-select: none;
   border: 1px solid var(--border);
+  border-left: 4px solid var(--trip-accent, var(--accent));
   transition: all 0.2s;
 }
 .trip-list-item-header:hover {
@@ -1336,6 +1370,21 @@ select {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+/* モバイル：ポイントマーカーを小さく */
+@media (max-width: 768px) {
+  .photo-marker-mobile .landmark-marker-num {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 14px !important;
+    border-width: 2px !important;
+  }
+  .photo-marker-mobile .landmark-marker-plain {
+    width: 16px !important;
+    height: 16px !important;
+    border-width: 2px !important;
+  }
+}
+
 /* 自動再生時：地図上に写真オーバーレイ（ポップアップと同じサイズ） */
 .play-photo-overlay {
   position: absolute;
@@ -1771,6 +1820,9 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--trip-accent, var(--accent));
+  border-radius: var(--radius);
 }
 .trip-menu-nav-row {
   display: flex;
@@ -1833,6 +1885,8 @@ select {
   background: var(--bg-hover);
   border-radius: var(--radius);
   text-align: center;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--trip-accent, var(--accent));
 }
 .trip-menu-header-section .trip-menu-meta {
   margin: 0 0 0.5rem;
@@ -1992,27 +2046,29 @@ select {
   align-items: center;
   gap: 0.5rem;
 }
-/* 旅行記生成・アニメ生成ボタンは10%小さく */
-#tripMenuTravelogueBtn,
-#tripMenuAnimeBtn {
-  transform: scale(0.9);
-  transform-origin: center;
+/* 旅行記生成・キャラ・アニメ生成ボタンの大きさを統一 */
+.trip-menu-editor-row .btn {
+  height: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#tripMenuAnimeCharBtn:not(.trip-menu-char-btn-with-photo) {
+  font-size: 0.75rem;
 }
 .trip-menu-char-btn-with-photo {
   padding: 0.2rem;
   min-width: 0;
   overflow: hidden;
 }
-/* キャラボタン：写真を目一杯表示 */
-#tripMenuAnimeCharBtn {
-  transform: scale(1.15);
-  transform-origin: center;
-}
 .trip-menu-char-btn-with-photo .trip-menu-char-btn-img {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 2rem;
+  height: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
   object-fit: cover;
   display: block;
   border-radius: 4px;
@@ -2316,13 +2372,14 @@ select {
   background: var(--bg);
   border-radius: var(--radius);
   border: 1px solid var(--border);
+  border-left: 4px solid var(--trip-accent, var(--accent));
   cursor: pointer;
   transition: all 0.2s;
   overflow: hidden;
 }
 .public-trip-card:hover {
   background: var(--bg-hover);
-  border-color: var(--accent);
+  border-color: var(--trip-accent, var(--accent));
   box-shadow: var(--shadow-sm);
 }
 .public-trip-card-inner {
@@ -2969,18 +3026,25 @@ select {
     background: rgba(255, 255, 255, 0.12);
   }
   .public-trips-panel .trip-menu-nav-arrow {
-    color: #fff;
+    color: var(--trip-accent, #fff);
   }
   .public-trips-panel .trip-menu-nav-row-bottom {
     border-top-color: rgba(255, 255, 255, 0.3);
+  }
+  /* モバイル：一番下のトリップ説明（前後ナビ）を非表示 */
+  .trip-menu-nav-row-bottom {
+    display: none !important;
   }
   .public-trips-panel .trip-menu-nav-label {
     color: #fff;
   }
   .public-trips-panel .trip-menu-title,
-  .public-trips-panel .trip-menu-name,
-  .public-trips-panel .trip-menu-photo-count {
+  .public-trips-panel .trip-menu-name {
     color: #fff;
+  }
+  .public-trips-panel .trip-menu-photo-count,
+  .public-trips-panel .trip-menu-photo-count.trip-menu-photo-count-clickable {
+    color: var(--trip-accent, #fff);
   }
   .public-trips-panel .trip-menu-meta {
     color: rgba(255, 255, 255, 0.8);
@@ -2999,34 +3063,44 @@ select {
     color: #fff;
   }
   .public-trips-panel .trip-menu-controls .btn {
-    background: rgba(255, 255, 255, 0.18);
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 25%, rgba(255, 255, 255, 0.18));
     color: #fff;
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: var(--trip-accent, var(--accent));
   }
   .public-trips-panel .trip-menu-controls .btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.28);
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.28));
   }
   .public-trips-panel .trip-menu-controls .btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--trip-accent, var(--accent));
+    border-color: var(--trip-accent, var(--accent));
     color: #fff;
   }
   .public-trips-panel .trip-menu-travelogue-info {
     color: rgba(255, 255, 255, 0.85);
   }
   .public-trips-panel .trip-menu-travelogue-link {
-    color: #f472b6;
+    color: var(--trip-accent, #f472b6);
   }
   .public-trips-panel .trip-menu-travelogue-summary-btn {
-    background: var(--accent);
+    background: var(--trip-accent, var(--accent));
     color: #fff;
+  }
+  .public-trips-panel .trip-menu-thumb:hover {
+    border-color: var(--trip-accent, var(--accent));
+  }
+  .public-trips-panel .trip-menu-detail-link {
+    color: var(--trip-accent, var(--accent));
   }
   .public-trips-panel .trip-menu-travelogue-date {
     color: rgba(255, 255, 255, 0.7);
   }
-  /* モバイル：トリップ詳細ヘッダーをシンプルに << トリップ説明 >> */
+  /* モバイル：トリップ詳細の枠線を非表示、ボタン等はトリップ色で統一 */
+  .trip-menu-content {
+    border: none;
+  }
   .trip-menu-header-section {
     background: transparent;
+    border: none;
     border-radius: 0;
     padding: 0.5rem 0;
     margin-bottom: 0.5rem;
@@ -3097,8 +3171,8 @@ select {
     flex-shrink: 0;
     min-width: 100px;
     padding: 0;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 25%, rgba(255, 255, 255, 0.1));
+    border: 2px solid var(--trip-accent, var(--accent));
     border-radius: 12px;
   }
   .public-trip-card-inner {
@@ -3116,8 +3190,8 @@ select {
   }
   .public-trip-card:hover,
   .public-trip-card:active {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: var(--accent);
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.15));
+    border-color: var(--trip-accent, var(--accent));
   }
   .public-trip-card .public-trip-name {
     font-size: 0.85rem;

@@ -143,6 +143,8 @@ const DATA_ANIME_STORE = 'dataAnime';
 
 let map = null;
 let markers = [];
+let _publicTripMarkerUrls = []; // 公開トリップマーカー用blob URL（revoke用）
+let _publicTripRouteLayers = []; // 公開トリップのルートレイヤー（削除用）
 let photoPopup = null; // 地図上の写真ポップアップ（GPSなし用）
 let gpxLayer = null;
 let routeLayer = null;
@@ -160,6 +162,7 @@ let gpxData = null;
 let gpxTrackPoints = []; // { lat, lon, time, ele, speed, temp, hr } - 各trkptの詳細データ
 let publicTrips = []; // デプロイ時に含まれる公開トリップ（public-trips.json）
 let _currentViewingTripId = null; // スタンプ保存用（loadTrip/loadTripAndShowPhotoで設定）
+let _currentTripColor = null; // 表示中トリップの色（ルート・マーカー用）
 let _addPointMode = false;
 let _addPointMapClickHandler = null;
 let _pendingExportBlob = null;
@@ -181,6 +184,48 @@ function createStyledRouteLayer(route) {
   group.addLayer(L.polyline(route, ROUTE_STYLE.outline));
   group.addLayer(L.polyline(route, ROUTE_STYLE.main));
   return group;
+}
+
+/** トリップ毎のルート用カラーパレット */
+const PUBLIC_TRIP_COLORS = ['#e1306c', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
+
+/** トリップまたはIDから色を返す（trip.color があればそれ、なければIDハッシュ） */
+function getTripColor(tripOrId) {
+  if (tripOrId == null) return PUBLIC_TRIP_COLORS[0];
+  if (typeof tripOrId === 'object' && tripOrId.color) return tripOrId.color;
+  const id = String(typeof tripOrId === 'object' ? tripOrId.id : tripOrId).replace(/^public_/, '');
+  if (!id) return PUBLIC_TRIP_COLORS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return PUBLIC_TRIP_COLORS[h % PUBLIC_TRIP_COLORS.length];
+}
+
+function createStyledRouteLayerWithColor(route, color) {
+  if (!route || route.length < 2) return null;
+  const group = L.layerGroup();
+  const outline = { ...ROUTE_STYLE.outline, color: '#ffffff' };
+  const main = { ...ROUTE_STYLE.main, color: color || ROUTE_STYLE.main.color };
+  group.addLayer(L.polyline(route, outline));
+  group.addLayer(L.polyline(route, main));
+  return group;
+}
+
+/** トリップからルートポイントを取得（GPXまたは写真順） */
+function getRoutePointsFromTrip(trip) {
+  if (trip.gpxData) {
+    try {
+      const doc = new DOMParser().parseFromString(trip.gpxData, 'text/xml');
+      const pts = [];
+      doc.querySelectorAll('trkpt, rtept').forEach(pt => {
+        const lat = parseFloat(pt.getAttribute('lat'));
+        const lon = parseFloat(pt.getAttribute('lon'));
+        if (!isNaN(lat) && !isNaN(lon)) pts.push([lat, lon]);
+      });
+      if (pts.length >= 2) return pts;
+    } catch (_) {}
+  }
+  const withGps = (trip.photos || []).filter(p => p.lat != null && p.lng != null);
+  return withGps.map(p => [p.lat, p.lng]);
 }
 
 /* --- IndexedDB --- */
@@ -1170,9 +1215,86 @@ function cancelAddPointMode() {
   setStatus('');
 }
 
+async function addPublicTripMarkers() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  _publicTripRouteLayers.forEach(l => { if (map && map.hasLayer(l)) map.removeLayer(l); });
+  _publicTripRouteLayers = [];
+  _publicTripMarkerUrls.forEach(u => { if (u?.startsWith?.('blob:')) URL.revokeObjectURL(u); });
+  _publicTripMarkerUrls = [];
+
+  if (!map) return;
+  const trips = await getDisplayablePublicTrips();
+  const allPoints = [];
+  const isMobile = isMobileView();
+  for (let ti = 0; ti < trips.length; ti++) {
+    const trip = trips[ti];
+    const tripPhotos = trip.photos || [];
+    const route = getRoutePointsFromTrip(trip);
+    const color = getTripColor(trip);
+    if (route.length >= 2) {
+      const routeLayer = createStyledRouteLayerWithColor(route, color);
+      routeLayer.addTo(map);
+      _publicTripRouteLayers.push(routeLayer);
+    }
+    for (let i = 0; i < tripPhotos.length; i++) {
+      const p = tripPhotos[i];
+      if (p.lat == null || p.lng == null) continue;
+      const displayPhoto = { ...p };
+      if (p.data) {
+        const url = base64ToUrl(p.mime || 'image/jpeg', p.data);
+        _publicTripMarkerUrls.push(url);
+        displayPhoto.url = url;
+      } else {
+        displayPhoto.url = null;
+      }
+      allPoints.push({ photo: displayPhoto, tripId: trip.id, photoIndex: i });
+    }
+  }
+
+  if (allPoints.length > 0) {
+    const bounds = L.latLngBounds(allPoints.map(x => [x.photo.lat, x.photo.lng]));
+    map.fitBounds(bounds, { padding: [80, 80], maxZoom: 14 });
+  } else {
+    map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+  }
+
+  for (const { photo, tripId, photoIndex } of allPoints) {
+    const trip = trips.find(t => t.id === tripId);
+    const color = getTripColor(trip || tripId);
+    const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
+    const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
+    const sz = isMobile ? (hasLandmarkNo ? [28, 28] : [16, 16]) : (hasLandmarkNo ? [40, 40] : [24, 24]);
+    const anchor = isMobile ? (hasLandmarkNo ? [14, 14] : [8, 8]) : (hasLandmarkNo ? [20, 20] : [12, 12]);
+    const icon = L.divIcon({
+      className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain') + (isMobile ? ' photo-marker-mobile' : ''),
+      html: hasLandmarkNo
+        ? `<span class="landmark-marker-num" style="background:${color};border-color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4),0 0 0 2px ${color}99;">${displayText}</span>`
+        : `<span class="landmark-marker-plain" style="background:${color};border-color:${color};"></span>`,
+      iconSize: sz,
+      iconAnchor: anchor,
+    });
+    const marker = L.marker([photo.lat, photo.lng], { icon })
+      .addTo(map)
+      .bindPopup(buildPhotoPopupHtml(photo, photoIndex), {
+        maxWidth: 488,
+        className: 'photo-popup',
+        autoClose: true,
+        closeOnClick: false,
+      });
+    marker._publicTripId = tripId;
+    marker._publicPhotoIndex = photoIndex;
+    markers.push(marker);
+  }
+}
+
 function addPhotoMarkers() {
   markers.forEach(m => map.removeLayer(m));
   markers = [];
+  _publicTripRouteLayers.forEach(l => { if (map && map.hasLayer(l)) map.removeLayer(l); });
+  _publicTripRouteLayers = [];
+  _publicTripMarkerUrls.forEach(u => { if (u?.startsWith?.('blob:')) URL.revokeObjectURL(u); });
+  _publicTripMarkerUrls = [];
 
   const withGps = photos.filter(p => p.lat != null && p.lng != null);
 
@@ -1181,19 +1303,28 @@ function addPhotoMarkers() {
     map.fitBounds(bounds, { padding: [150, 150], maxZoom: 16 });
   }
 
-  if (withGps.length === 0) return;
+  if (withGps.length === 0) {
+    addPublicTripMarkers();
+    return;
+  }
 
+  const isMobile = isMobileView();
+  const color = _currentTripColor || null;
   withGps.forEach((photo) => {
     const photoIndex = photos.indexOf(photo);
     const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
     const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
+    const sz = isMobile ? (hasLandmarkNo ? [28, 28] : [16, 16]) : (hasLandmarkNo ? [40, 40] : [24, 24]);
+    const anchor = isMobile ? (hasLandmarkNo ? [14, 14] : [8, 8]) : (hasLandmarkNo ? [20, 20] : [12, 12]);
+    const c = color || (hasLandmarkNo ? ROUTE_STYLE.main.color : '#999');
+    const html = hasLandmarkNo
+      ? `<span class="landmark-marker-num" style="background:${c};border-color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4),0 0 0 2px ${c}99;">${displayText}</span>`
+      : `<span class="landmark-marker-plain" style="background:${c};border-color:${c};"></span>`;
     const icon = L.divIcon({
-      className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain'),
-      html: hasLandmarkNo
-        ? `<span class="landmark-marker-num">${displayText}</span>`
-        : `<span class="landmark-marker-plain"></span>`,
-      iconSize: hasLandmarkNo ? [40, 40] : [24, 24],
-      iconAnchor: hasLandmarkNo ? [20, 20] : [12, 12],
+      className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain') + (isMobile ? ' photo-marker-mobile' : ''),
+      html,
+      iconSize: sz,
+      iconAnchor: anchor,
     });
     const marker = L.marker([photo.lat, photo.lng], { icon })
       .addTo(map)
@@ -1472,7 +1603,8 @@ function startPlay() {
     map.removeLayer(gpxLayer);
     gpxLayer = null;
   }
-  routeLayer = createStyledRouteLayer(routePoints);
+  const playColor = _currentTripColor || ROUTE_STYLE.main.color;
+  routeLayer = createStyledRouteLayerWithColor(routePoints, playColor);
   if (routeLayer) routeLayer.addTo(map);
 
   const bounds = L.latLngBounds(routePoints);
@@ -2958,7 +3090,8 @@ function applyGpxToMap(xml) {
       if (!isNaN(lat) && !isNaN(lon)) route.push([lat, lon]);
     });
     if (route.length >= 2) {
-      const line = createStyledRouteLayer(route);
+      const color = _currentTripColor || ROUTE_STYLE.main.color;
+      const line = createStyledRouteLayerWithColor(route, color);
       if (gpxLayer) map.removeLayer(gpxLayer);
       gpxLayer = line;
       if (line) {
@@ -3004,12 +3137,14 @@ async function autoSaveTrip() {
   if (storedPhotos.length === 0) return;
 
   const existing = await loadTripFromDB(currentTripId);
+  const tripColor = document.getElementById('tripColorInput')?.value || null;
   const trip = {
     id: currentTripId,
     name,
     description: document.getElementById('tripDescInput')?.value?.trim() || null,
     url: document.getElementById('tripUrlInput')?.value?.trim() || null,
     public: document.getElementById('tripPublicInput')?.checked ?? false,
+    color: tripColor || undefined,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
     photos: storedPhotos,
@@ -3084,12 +3219,14 @@ async function saveTrip(opts = {}) {
   const isPublic = document.getElementById('tripPublicInput').checked;
   const id = currentTripId || 'trip_' + Date.now();
   const existing = currentTripId ? await loadTripFromDB(id) : null;
+  const tripColor = document.getElementById('tripColorInput')?.value || null;
   const trip = {
     id,
     name,
     description,
     url: tripUrl,
     public: isPublic,
+    color: tripColor || undefined,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
     photos: storedPhotos,
@@ -3108,6 +3245,8 @@ async function saveTrip(opts = {}) {
   document.getElementById('tripNameInput').value = name;
   document.getElementById('tripUrlInput').value = tripUrl || '';
   document.getElementById('tripPublicInput').checked = isPublic;
+  const colorInput = document.getElementById('tripColorInput');
+  if (colorInput) colorInput.value = tripColor || PUBLIC_TRIP_COLORS[0];
   updateTripInfoDisplay(trip);
   await refreshTripList();
   await renderPublicTripsPanel();
@@ -3139,6 +3278,10 @@ async function loadTrip() {
     setStatus('トリップが見つかりません', true);
     return;
   }
+  if (!isPublicTrip && !trip.color) {
+    trip.color = getTripColor(trip);
+    saveTripToDB(trip).catch(() => {});
+  }
 
   if (isPublicTrip) currentTripId = null;
   else currentTripId = id;
@@ -3155,6 +3298,9 @@ async function loadTrip() {
   document.getElementById('tripUrlInput').value = trip.url || '';
   const publicInput = document.getElementById('tripPublicInput');
   if (publicInput) publicInput.checked = !!trip.public;
+  const colorInput = document.getElementById('tripColorInput');
+  if (colorInput) colorInput.value = trip.color || getTripColor(trip);
+  _currentTripColor = trip.color || getTripColor(trip);
 
   photos = (trip.photos || []).map((p, i) => ({
     name: p.name,
@@ -3240,6 +3386,9 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   document.getElementById('tripUrlInput').value = trip.url || '';
   const publicInput2 = document.getElementById('tripPublicInput');
   if (publicInput2) publicInput2.checked = !!trip.public;
+  const colorInput2 = document.getElementById('tripColorInput');
+  if (colorInput2) colorInput2.value = trip.color || getTripColor(trip);
+  _currentTripColor = trip.color || getTripColor(trip);
 
   photos = (trip.photos || []).map((p, i) => ({
     name: p.name,
@@ -3432,6 +3581,7 @@ function clearCurrentTrip() {
   });
   currentTripId = null;
   isNewTrip = false;
+  _currentTripColor = null;
   photos = [];
   _showTripListInPanel = false;
   gpxData = null;
@@ -3441,6 +3591,8 @@ function clearCurrentTrip() {
   document.getElementById('tripUrlInput').value = '';
   const publicInputClear = document.getElementById('tripPublicInput');
   if (publicInputClear) publicInputClear.checked = false;
+  const colorInputClear = document.getElementById('tripColorInput');
+  if (colorInputClear) colorInputClear.value = PUBLIC_TRIP_COLORS[0];
   updateTripInfoDisplay(null);
   setPlayStopDisabled(true);
   document.getElementById('deleteTripBtn').disabled = true;
@@ -3504,6 +3656,7 @@ async function loadPublicTripsFromServer() {
     if (!isEditor()) setStatus('公開トリップの読み込みに失敗しました', true);
   }
   await renderPublicTripsPanel();
+  if (photos.length === 0) addPublicTripMarkers();
 }
 
 function getPublicTripConfig() {
@@ -3977,6 +4130,8 @@ async function renderPublicTripsPanel() {
       const idx = globalIdx++;
     const card = document.createElement('div');
     card.className = 'public-trip-card';
+    const tripColor = getTripColor(trip);
+    card.style.setProperty('--trip-accent', tripColor);
     const photos = trip.photos || [];
     const firstPhoto = photos[0];
     let thumbSrc = '';
@@ -3994,7 +4149,7 @@ async function renderPublicTripsPanel() {
       gpxParts.push(distStr + speedStr);
     }
     const gpxMeta = gpxParts.length > 0 ? gpxParts.join(' ') : '';
-    const showOrderBtns = isEditor();
+    const showOrderBtns = isEditor() && !isMobile;
     const nameText = isMobile ? escapeHtml(trip.name) : `${escapeHtml(trip.name)}（${photos.length}枚）`;
     card.innerHTML = `
       <div class="public-trip-card-inner">
@@ -4092,6 +4247,7 @@ async function renderTripMenu() {
   content.className = 'trip-menu-content';
 
   const tripId = _currentViewingTripId || currentTripId || '';
+  let _tripMenuAccent = _currentTripColor;
   const rawTripId = (typeof tripId === 'string' && tripId.startsWith('public_')) ? tripId.slice(7) : tripId;
   const travelogueInfo = getTravelogueInfo(tripId) || getTravelogueInfo(rawTripId);
 
@@ -4104,11 +4260,13 @@ async function renderTripMenu() {
     const idx = g.trips.findIndex(t => normId(t) === tripId || t.id === tripId || t.id === rawTripId);
     if (idx >= 0) {
       currentTrip = g.trips[idx];
+      _tripMenuAccent = getTripColor(currentTrip);
       prevTrip = idx > 0 ? g.trips[idx - 1] : null;
       nextTrip = idx < g.trips.length - 1 ? g.trips[idx + 1] : null;
       break;
     }
   }
+  content.style.setProperty('--trip-accent', _tripMenuAccent || PUBLIC_TRIP_COLORS[0]);
   const embeddedTravelogue = currentTrip?.travelogueHtml;
   const hasLink = travelogueInfo || !!embeddedTravelogue || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent);
 
@@ -5353,6 +5511,7 @@ async function importTripsFromFile() {
           description: trip.description || null,
           url: trip.url || null,
           public: !!trip.public,
+          color: trip.color || undefined,
           photos: storedPhotos,
           gpxData: trip.gpxData || null,
           createdAt: trip.createdAt || Date.now(),
@@ -5446,6 +5605,8 @@ async function renderTripListPanel() {
   allTrips.forEach(trip => {
     const item = document.createElement('div');
     item.className = 'trip-list-item';
+    const tripColor = getTripColor(trip);
+    item.style.setProperty('--trip-accent', tripColor);
     const photos = trip.photos || [];
     const showDelete = isEditor() && !trip._isPublic;
     item.innerHTML = `
@@ -5541,7 +5702,6 @@ function goToHome() {
   document.getElementById('tripSelect').value = '';
   closeMenu();
   document.getElementById('allPhotosThumbnails').classList.remove('visible');
-  if (map) map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
   setStatus('');
 }
 
@@ -5567,6 +5727,8 @@ async function renderMenuMobileTripList() {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'menu-mobile-trip-card';
+    const tripColor = getTripColor(trip);
+    card.style.setProperty('--trip-accent', tripColor);
     const photos = trip.photos || [];
     const firstPhoto = photos[0];
     let thumbSrc = '';
@@ -5988,6 +6150,31 @@ async function setup() {
   document.getElementById('tripDescInput').addEventListener('input', () => { updateSaveButtonState(); scheduleAutoSave(); });
   document.getElementById('tripUrlInput').addEventListener('input', () => { updateSaveButtonState(); scheduleAutoSave(); });
   document.getElementById('tripPublicInput')?.addEventListener('change', scheduleAutoSave);
+  const tripColorInput = document.getElementById('tripColorInput');
+  if (tripColorInput) {
+    const onColorChange = () => {
+      updateSaveButtonState();
+      scheduleAutoSave();
+      if (currentTripId) setTimeout(() => autoSaveTrip(), 300);
+    };
+    tripColorInput.addEventListener('input', onColorChange);
+    tripColorInput.addEventListener('change', onColorChange);
+    const swatches = document.getElementById('tripColorSwatches');
+    if (swatches) {
+      PUBLIC_TRIP_COLORS.forEach(c => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'trip-color-swatch';
+        btn.style.backgroundColor = c;
+        btn.title = c;
+        btn.onclick = () => {
+          tripColorInput.value = c;
+          onColorChange();
+        };
+        swatches.appendChild(btn);
+      });
+    }
+  }
   document.getElementById('loadTripBtn').onclick = loadTrip;
   document.getElementById('newTripBtn').onclick = () => {
     if (!isEditor()) return;
