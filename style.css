@@ -13,6 +13,7 @@
   --accent-secondary: #833ab4;
   --gradient: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
   --gradient-soft: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+  --gradient-airgo: linear-gradient(135deg, #667eea 0%, #764ba2 20%, #f093fb 40%, #f5576c 60%, #4facfe 80%, #00f2fe 100%);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
   --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
@@ -49,6 +50,9 @@ body {
 /* === Header（モバイル用・デスクトップでは非表示） === */
 @media (min-width: 769px) {
   .header {
+    display: none !important;
+  }
+  .header-mobile-only {
     display: none !important;
   }
 }
@@ -97,7 +101,7 @@ body {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  background: var(--gradient-soft);
+  background: var(--gradient-airgo);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -258,6 +262,9 @@ body {
 }
 .desktop-only {
   display: block;
+}
+.header-mobile-only {
+  display: none;
 }
 .menu-mobile-trip-nav {
   display: none;
@@ -646,6 +653,25 @@ body {
   max-width: 100%;
   max-height: calc(100vh - 4rem);
   object-fit: contain;
+}
+
+/* モバイル：写真ポップアップを縦長枠で表示 */
+@media (max-width: 768px) {
+  .full-photo-overlay .full-photo-content {
+    width: min(320px, 88vw);
+    max-height: calc(100vh - 5rem);
+    aspect-ratio: 3 / 4;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  .full-photo-overlay .full-photo-content img {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+  }
 }
 
 .modal {
@@ -1858,7 +1884,7 @@ select {
 }
 .trip-menu-nav-row .trip-menu-title {
   font-size: 0.9rem;
-  font-weight: 400;
+  font-weight: 700;
   color: var(--text);
   margin: 0;
   line-height: 1.4;
@@ -1909,7 +1935,7 @@ select {
 }
 .trip-menu-title {
   font-size: 0.9rem;
-  font-weight: 400;
+  font-weight: 700;
   color: var(--text);
   margin: 0 0 0.35rem;
   line-height: 1.4;
@@ -2417,6 +2443,7 @@ select {
 }
 .public-trip-card .public-trip-desc {
   font-size: 0.75rem;
+  font-weight: 700;
   color: var(--text-muted);
   line-height: 1.4;
   margin-bottom: 0.25rem;
@@ -2835,9 +2862,9 @@ select {
     background: var(--mobile-bg);
   }
 
-  /* ヘッダー：トリップ名(枚数)、前、次、▶︎再生、ハンバーガーのみ（AirGo非表示） */
-  .header:has(.trip-name-nav.visible) .header-title {
-    display: none !important;
+  /* モバイルヘッダー：AirGo、トリップ名5文字、前、次、▶︎再生、アニメ、ハンバーガー */
+  .header-mobile-only {
+    display: inline-flex !important;
   }
   .header-btn-text-desktop {
     display: none;
@@ -2873,13 +2900,13 @@ select {
   .trip-name-nav .trip-info-name {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #fff;
+    color: var(--trip-accent, #fff);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .trip-name-nav .trip-info-name.trip-name-clickable {
-    color: #fff;
+    color: var(--trip-accent, #fff);
   }
   .trip-info-meta-row {
     display: none !important;
@@ -2912,10 +2939,20 @@ select {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.15);
   }
-  .header-controls-row .btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
+  .header-controls-row .btn-primary,
+  .header-controls-row .play-btn {
+    background: var(--trip-accent, var(--accent));
+    border-color: var(--trip-accent, var(--accent));
     color: #fff;
+  }
+  .header-controls-row .header-anime-btn {
+    background: var(--trip-accent, var(--accent));
+    border-color: var(--trip-accent, var(--accent));
+    color: #fff;
+  }
+  .header-controls-row .header-anime-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
+    border-color: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
   }
   .hamburger-btn span {
     background: #fff;

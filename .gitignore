@@ -4,3 +4,6 @@ Arc/
 # 環境・ログ
 .env
 *.log
+
+# Firebase 設定（API キーを含むためコミットしない）
+firebase-config.js
