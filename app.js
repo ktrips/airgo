@@ -2,9 +2,6 @@
 
 const DB_NAME = 'airgo';
 const DB_VERSION = 5;
-const AUTH_STORAGE_KEY = 'airgo_editor';
-const AUTH_USER_DEFAULT = 'usr2';
-const AUTH_PASS_DEFAULT = 'pswd';
 const AI_PROVIDER_STORAGE_KEY = 'airgo_ai_provider';
 const AI_API_KEY_STORAGE_KEY = 'airgo_ai_api_key';
 const PUBLIC_TRIP_CONFIG_KEY = 'airgo_public_trip_config';
@@ -40,12 +37,11 @@ function setTravelogueInfo(tripId, info) {
 }
 
 function isEditor() {
-  return sessionStorage.getItem(AUTH_STORAGE_KEY) === '1';
+  return !!(window.firebaseAuth?.currentUser);
 }
 
 function setEditor(ok) {
-  if (ok) sessionStorage.setItem(AUTH_STORAGE_KEY, '1');
-  else sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  // 編集権限は Firebase Auth の状態で判定（isEditor 参照）
 }
 
 function getHiddenAnimeIds() {
@@ -79,10 +75,6 @@ function setCharacterPhotos(tripId, photos) {
     else map[tripId] = photos;
     localStorage.setItem(ANIME_CHARACTER_PHOTOS_KEY, JSON.stringify(map));
   } catch (_) {}
-}
-
-function checkAuth(user, pass) {
-  return (user || '').trim() === AUTH_USER_DEFAULT && (pass || '') === AUTH_PASS_DEFAULT;
 }
 
 function getAiApiProvider() {
@@ -121,10 +113,8 @@ function updateEditorUI() {
   if (authBtn) {
     if (isEd && window.firebaseAuth?.currentUser) {
       authBtn.textContent = `ログアウト (${window.firebaseAuth.currentUser.email || 'Google'})`;
-    } else if (isEd) {
-      authBtn.textContent = `ログアウト (${AUTH_USER_DEFAULT})`;
     } else {
-      authBtn.textContent = 'ログイン';
+      authBtn.textContent = 'Googleでログイン';
     }
   }
   document.querySelectorAll('.editor-only').forEach(el => {
@@ -5465,10 +5455,10 @@ async function refreshTripList() {
     console.error('トリップ読み込みエラー:', err);
     setStatus('トリップの読み込みに失敗しました。インポートで復元できます。', true);
   }
-  const allTrips = [...dbTrips];
+  let allTrips = [...dbTrips];
   publicTrips.forEach(t => {
     if (!allTrips.some(x => x.id === t.id)) {
-      allTrips.push({ ...t, id: 'public_' + t.id });
+      allTrips.push({ ...t, id: 'public_' + t.id, _isPublic: true });
     }
   });
   // Firebase が有効かつログイン中の場合、Firestore の自分のトリップをマージ（IndexedDB を優先）
@@ -5481,6 +5471,9 @@ async function refreshTripList() {
     });
   } else {
     firestoreTrips = [];
+  }
+  if (!isEditor()) {
+    allTrips = allTrips.filter(t => t.id?.startsWith('public_') || t._isPublic);
   }
   const select = document.getElementById('tripSelect');
   const prevVal = select.value;
@@ -5973,70 +5966,43 @@ async function setup() {
   cleanupOrphanedStorage().catch(err => console.warn('ストレージ最適化:', err));
   updateEditorUI();
 
-  document.getElementById('authBtn').onclick = () => {
+  document.getElementById('authBtn').onclick = async () => {
     if (isEditor()) {
-      if (window.firebaseAuth) window.firebaseAuth.signOut().catch(() => {});
-      setEditor(false);
+      if (window.firebaseAuth) await window.firebaseAuth.signOut().catch(() => {});
       updateEditorUI();
+      await refreshTripList();
       setStatus('ログアウトしました');
     } else {
-      closeMenu();
-      document.getElementById('authModal').classList.add('open');
-    }
-  };
-
-  document.getElementById('authModalClose').onclick = () => {
-    document.getElementById('authModal').classList.remove('open');
-  };
-
-  document.getElementById('authLoginBtn').onclick = () => {
-    const user = document.getElementById('authUser').value;
-    const pass = document.getElementById('authPass').value;
-    if (checkAuth(user, pass)) {
-      setEditor(true);
-      updateEditorUI();
-      document.getElementById('authModal').classList.remove('open');
-      document.getElementById('authUser').value = '';
-      document.getElementById('authPass').value = '';
-      setStatus('ログインしました');
-    } else {
-      setStatus('ユーザー名またはパスワードが正しくありません', true);
-    }
-  };
-
-  // Firebase が有効な場合: Google ログインボタンを表示し、クリックでポップアップ認証
-  const authGoogleBtn = document.getElementById('authGoogleBtn');
-  if (authGoogleBtn && window.firebaseAuth && typeof firebase !== 'undefined') {
-    authGoogleBtn.style.display = '';
-    authGoogleBtn.onclick = async () => {
-      try {
-        await window.firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-        setEditor(true);
-        updateEditorUI();
-        document.getElementById('authModal').classList.remove('open');
-        await refreshTripList();
-        setStatus('Googleでログインしました');
-      } catch (err) {
-        console.error('Google ログインエラー:', err);
-        if (err?.code === 'auth/popup-blocked') {
-          setStatus('ポップアップがブロックされました。リダイレクトでログインします…', true);
-          try {
-            await window.firebaseAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
-          } catch (e) {
-            setStatus('ブラウザのポップアップブロックを解除するか、別のブラウザでお試しください', true);
+      if (window.firebaseAuth && typeof firebase !== 'undefined') {
+        closeMenu();
+        try {
+          await window.firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+          updateEditorUI();
+          await refreshTripList();
+          setStatus('Googleでログインしました');
+        } catch (err) {
+          console.error('Google ログインエラー:', err);
+          if (err?.code === 'auth/popup-blocked') {
+            setStatus('ポップアップがブロックされました。リダイレクトでログインします…', true);
+            try {
+              await window.firebaseAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+            } catch (e) {
+              setStatus('ブラウザのポップアップブロックを解除するか、別のブラウザでお試しください', true);
+            }
+          } else {
+            setStatus(err.message || 'Googleでログインに失敗しました', true);
           }
-        } else {
-          setStatus(err.message || 'Googleでログインに失敗しました', true);
         }
+      } else {
+        setStatus('Firebase の設定が必要です。firebase-config.js を確認してください。', true);
       }
-    };
-  }
+    }
+  };
 
   // Firebase リダイレクトログインの結果を処理（signInWithRedirect 後の戻り時に必要）
   if (window.firebaseAuth) {
     window.firebaseAuth.getRedirectResult().then(result => {
       if (result?.user) {
-        setEditor(true);
         updateEditorUI();
         refreshTripList();
         setStatus('Googleでログインしました');
@@ -6047,17 +6013,12 @@ async function setup() {
   // Firebase 認証状態の監視（ページ読み込み時に既にログイン済みの場合）
   if (window.firebaseAuth) {
     window.firebaseAuth.onAuthStateChanged(async user => {
-      if (user && !isEditor()) {
-        setEditor(true);
+      if (user) {
         updateEditorUI();
         await refreshTripList();
       }
     });
   }
-
-  document.getElementById('authModal').onclick = e => {
-    if (e.target.id === 'authModal') document.getElementById('authModal').classList.remove('open');
-  };
 
   document.getElementById('helpBtn').onclick = () => {
     document.getElementById('helpModal').classList.add('open');

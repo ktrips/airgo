@@ -93,14 +93,14 @@
             <button type="button" class="btn btn-primary editor-only" id="saveTripBtn" disabled>保存</button>
             <button type="button" class="btn btn-secondary editor-only" id="newTripBtn">新規</button>
           </div>
-          <div class="menu-field login-required" id="tripSelectField">
+          <div class="menu-field" id="tripSelectField">
             <label>トリップを選択</label>
             <select id="tripSelect" class="menu-select">
               <option value="">— 読み込む —</option>
             </select>
           </div>
           <div class="menu-row">
-            <button type="button" class="btn btn-secondary login-required" id="loadTripBtn">読み込み</button>
+            <button type="button" class="btn btn-secondary" id="loadTripBtn">読み込み</button>
             <button type="button" class="btn btn-secondary btn-danger editor-only" id="deleteTripBtn" disabled>削除</button>
           </div>
           <div class="menu-row editor-only">
@@ -153,7 +153,7 @@
             <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
           </div>
         </section>
-        <p class="menu-hint editor-only-hint" id="editorOnlyHint" style="display:none">写真の閲覧・自動再生は可能です。アップロードするにはログインしてください</p>
+        <p class="menu-hint editor-only-hint" id="editorOnlyHint" style="display:none">公開トリップは閲覧可能です。編集・アップロードするにはGoogleでログインしてください</p>
         <section class="menu-section">
           <button type="button" class="btn btn-secondary menu-full" id="helpBtn">❓ ヘルプ（使い方・設定）</button>
         </section>
@@ -458,31 +458,6 @@
       </div>
       <div class="modal-body anime-modal-body">
         <div id="animeModalContent" class="anime-modal-content"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ログインモーダル -->
-  <div class="modal-overlay" id="authModal">
-    <div class="modal auth-modal">
-      <div class="modal-header">
-        <h2>アップロード用ログイン</h2>
-        <button type="button" class="modal-close" id="authModalClose" aria-label="閉じる">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p class="auth-hint">写真・GPXのアップロードにはログインが必要です。閲覧は誰でも可能です。</p>
-        <div class="modal-field">
-          <label for="authUser">ユーザー名</label>
-          <input type="text" id="authUser" class="modal-input" placeholder="ユーザー名" autocomplete="username">
-        </div>
-        <div class="modal-field">
-          <label for="authPass">パスワード</label>
-          <input type="password" id="authPass" class="modal-input" placeholder="パスワード" autocomplete="current-password">
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-primary" id="authLoginBtn">ログイン</button>
-          <button type="button" class="btn btn-secondary" id="authGoogleBtn" style="display:none">Googleでログイン</button>
-        </div>
       </div>
     </div>
   </div>
