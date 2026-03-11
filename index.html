@@ -147,13 +147,7 @@
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
-            <button type="button" class="btn btn-secondary menu-full" id="downloadIndexedDBTripsBtn" title="IndexedDB内の全トリップをJSONでダウンロード（保存先を先に選択）">📤 IndexedDB トリップをダウンロード</button>
-            <button type="button" class="btn btn-secondary menu-full" id="downloadIndexedDBTripsSimpleBtn" title="写真・アニメ・スタンプ・旅行記を圧縮して軽量ダウンロード">📤 IndexedDB トリップ（簡易）</button>
             <button type="button" class="btn btn-primary menu-full" id="uploadIndexedDBToFirestoreBtn" title="IndexedDB のトリップを Firestore にアップロード（Google ログイン時のみ）" style="display:none">☁️ IndexedDB → Firestore にアップロード</button>
-          </div>
-          <div class="menu-row editor-only">
-            <input type="file" id="compressPublicTripsInput" accept=".json,application/json" hidden>
-            <button type="button" class="btn btn-secondary menu-full" id="compressPublicTripsBtn" title="既存の public-trips.json を圧縮して容量を削減">🗜️ public-trips.json を圧縮</button>
           </div>
           <div class="menu-row editor-only">
             <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
