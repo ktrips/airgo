@@ -11,6 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Create firebase-config.js for Google ログイン
+        env:
+          FIREBASE_CONFIG_JS: ${{ secrets.FIREBASE_CONFIG_JS }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG_JS" ]; then
+            printf '%s' "$FIREBASE_CONFIG_JS" > firebase-config.js
+            echo "✔ firebase-config.js を GitHub Secrets から生成しました"
+          else
+            cp firebase-config.example.js firebase-config.js
+            echo "::warning::FIREBASE_CONFIG_JS が未設定です。Google ログインは動作しません。"
+          fi
+
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

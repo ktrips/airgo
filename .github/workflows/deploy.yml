@@ -53,6 +53,18 @@ jobs:
           ls -la data/ || true
           test -f data/public-trips.json && echo "✔ data/public-trips.json がビルドに含まれます" || (echo "::error::data/public-trips.json が見つかりません"; exit 1)
 
+      - name: Create firebase-config.js for Google ログイン
+        env:
+          FIREBASE_CONFIG_JS: ${{ secrets.FIREBASE_CONFIG_JS }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG_JS" ]; then
+            printf '%s' "$FIREBASE_CONFIG_JS" > firebase-config.js
+            echo "✔ firebase-config.js を GitHub Secrets から生成しました"
+          else
+            cp firebase-config.example.js firebase-config.js
+            echo "::warning::FIREBASE_CONFIG_JS が未設定です。firebase-config.example.js をコピーしました。Google ログインは動作しません。"
+          fi
+
       - name: Install gcloud and authenticate
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

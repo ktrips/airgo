@@ -7,8 +7,10 @@ RUN apk add --no-cache gettext
 RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf
 
 # 静的ファイルをコピー
-COPY index.html style.css app.js /usr/share/nginx/html/
+COPY index.html style.css app.js firebase-init.js /usr/share/nginx/html/
 COPY data/ /usr/share/nginx/html/data/
+# firebase-config.js はデプロイ時に GitHub Secrets から生成（ワークフローで事前作成必須）
+COPY firebase-config.js /usr/share/nginx/html/
 
 # nginx 設定テンプレート（起動時に PORT を置換）
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
