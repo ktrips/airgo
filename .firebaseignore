@@ -7,10 +7,6 @@
 Dockerfile
 docker-entrypoint.sh
 nginx.conf.template
-cloudbuild.yaml
-deploy.sh
-deploy-firebase.sh
-DEPLOY.md
 .env
 *.log
 Arc/

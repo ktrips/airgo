@@ -145,10 +145,16 @@
         <section class="menu-section">
           <button type="button" class="btn btn-secondary menu-full desktop-only" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
           <button type="button" class="btn btn-secondary menu-full" id="exportPublicBtn" title="ローカルの公開トリップを圧縮して保存、またはサーバーからダウンロード">📤 公開トリップをエクスポート</button>
+          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportAllTripsBtn" title="IndexedDB の全トリップを容量制限なく gzip 圧縮してダウンロード">📦 全トリップをダウンロード</button>
+          <button type="button" class="btn btn-secondary btn-sm menu-full editor-only" id="simpleDownloadBtn" title="表示中のトリップ一覧を即座に JSON でダウンロード（軽量・高速）">⬇ 簡易ダウンロード</button>
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
-            <button type="button" class="btn btn-primary menu-full" id="uploadIndexedDBToFirestoreBtn" title="IndexedDB のトリップを Firestore にアップロード（Google ログイン時のみ）" style="display:none">☁️ IndexedDB → Firestore にアップロード</button>
+            <button type="button" class="btn btn-primary menu-full" id="uploadIndexedDBToFirestoreBtn" title="IndexedDB のトリップを Firestore に同期（初回は全件、以降は差分のみ）" style="display:none">☁️ IndexedDB → Firestore に同期</button>
+          </div>
+          <div class="menu-row editor-only">
+            <button type="button" class="btn btn-secondary btn-sm" id="uploadDiffOnlyBtn" title="変更したトリップのみ Firestore に送信（削除同期含む）" style="display:none">差分のみ送信</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="uploadIndexedDBToFirestoreFullBtn" title="全件を再アップロード（強制フル同期）" style="display:none">全件再送信</button>
           </div>
           <div class="menu-row editor-only">
             <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
@@ -470,8 +476,23 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js"></script>
+  <script src="firebase-config.js" onerror="window.FIREBASE_CONFIG_LOAD_FAILED=true"></script>
   <script src="firebase-init.js"></script>
+  <script type="module">
+    // 明示的に (default) データベースを指定（エラー5対策）
+    (async function() {
+      if (!window.firebaseApp || !window.FIREBASE_CONFIG) return;
+      try {
+        const { getFirestore } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js');
+        const db = getFirestore(window.firebaseApp, '(default)');
+        db.settings({ ignoreUndefinedProperties: true });
+        window.firebaseDb = db;
+        console.log('Firebase: Firestore (default) で初期化完了');
+      } catch (e) {
+        console.warn('Firebase: モジュラー Firestore の初期化に失敗、compat を使用', e);
+      }
+    })();
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

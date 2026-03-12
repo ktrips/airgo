@@ -56,9 +56,9 @@ GitHub リポジトリ → **Settings** → **Secrets and variables** → **Acti
 
 ## 5. public-trips.json について
 
-- リポジトリに `public-trips.json` が含まれている場合、その内容がデプロイされます
+- リポジトリに `data/public-trips.json` が含まれている場合、その内容がデプロイされます
 - 含まれていない場合、空の `[]` が自動作成されます（公開トリップなしの状態）
-- 公開トリップを表示するには、アプリでエクスポートした `public-trips.json` をリポジトリにコミットしてください
+- 公開トリップを表示するには、アプリでエクスポートした `public-trips.json` を `data/public-trips.json` に配置してコミットしてください
 
 ## 6. カスタムドメイン airgo.ktrips.net の設定
 
@@ -151,3 +151,36 @@ GitHub Secrets に `FIREBASE_CONFIG_JS` を登録し、ローカルの `firebase
 
 - `https://airgo.ktrips.net`
 - `https://air.ktrips.net`
+
+---
+
+## Firestore アップロードでエラー(5)が出る場合
+
+「IndexedDB → Firestore にアップロード」でエラーコード 5 が出る場合、Firestore データベースが未作成または設定が誤っている可能性があります。
+
+### 対処手順
+
+1. [Firebase Console](https://console.firebase.google.com/) → プロジェクト **airgo-trip** → **Firestore Database**
+2. **「データベースを作成」** をクリック
+3. **重要**: **Cloud Firestore（ネイティブモード）** を選択（Datastore モードではない）
+4. ロケーション: **asia-northeast1 (Tokyo)** を選択
+5. セキュリティルール: 本番モードで開始
+6. 作成後、`firebase deploy --only firestore:rules` でルールをデプロイ
+
+---
+
+## 「Missing or insufficient permissions」が出る場合
+
+Firestore のセキュリティルールがデプロイされていないか、ログインしていない可能性があります。
+
+### 対処手順
+
+1. **ルールをデプロイ**（必須）:
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+   プロジェクトルートで実行し、`firestore.rules` の内容が Firebase に反映されます。
+
+2. **ログイン確認**: アプリで「Google でログイン」してから「IndexedDB → Firestore に同期」を実行してください。
+
+3. **ルールの確認**: [Firebase Console](https://console.firebase.google.com/project/airgo-trip/firestore/rules) → Firestore → ルール で、`trips` コレクションに `request.auth != null` のルールが反映されているか確認

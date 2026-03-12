@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Firestore 接続診断</title>
+  <style>
+    body { font-family: sans-serif; max-width: 560px; margin: 2rem auto; padding: 1rem; }
+    h1 { font-size: 1.2rem; }
+    #result { margin: 1rem 0; padding: 1rem; border-radius: 8px; white-space: pre-wrap; }
+    #result.ok { background: #e8f5e9; color: #2e7d32; }
+    #result.err { background: #ffebee; color: #c62828; }
+    #result.pending { background: #fff3e0; color: #e65100; }
+    a { color: #1976d2; }
+    ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    li { margin: 0.25rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Firestore 接続診断</h1>
+  <p>このページでエラー5の原因を確認できます。firebase-config.js が同じフォルダにあることを確認し、<strong>このHTMLをアプリと同じオリジン</strong>（例: http://localhost:8080）で開いてください。</p>
+  <div id="result" class="pending">診断中…</div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <script src="../firebase-config.js"></script>
+  <script>
+    const el = document.getElementById('result');
+    const FIREBASE_URL = 'https://console.firebase.google.com/project/airgo-trip/firestore';
+    const CREATE_URL = FIREBASE_URL + '?create=true';
+
+    async function run() {
+      if (typeof FIREBASE_CONFIG === 'undefined') {
+        el.className = 'err';
+        el.textContent = 'エラー: firebase-config.js が読み込めません。\nこのHTMLを index.html と同じサーバー（例: http://localhost:8080）で開いてください。';
+        return;
+      }
+      try {
+        const app = firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore(app);
+        db.settings({ ignoreUndefinedProperties: true });
+
+        el.textContent = 'Firestore に接続してテスト書き込みを実行中…';
+        const testId = '_airgo_check_' + Date.now();
+        await db.collection('trips').doc(testId).set({ _check: true, createdAt: Date.now() });
+        await db.collection('trips').doc(testId).delete();
+
+        el.className = 'ok';
+        el.textContent = '✓ 接続成功！ Firestore は正常に動作しています。\nアプリの「IndexedDB → Firestore に同期」をお試しください。';
+      } catch (err) {
+        el.className = 'err';
+        const code = err?.code ?? err?.cause?.code;
+        let msg = `エラー: ${err.message}\n`;
+        if (code === 5 || /NOT_FOUND|code:\s*5/i.test(err.message)) {
+          msg += '\n【エラー5 = Firestore データベースが未作成です】\n\n';
+          msg += '対処手順:\n';
+          msg += '1. 以下のURLを開く:\n   ' + CREATE_URL + '\n\n';
+          msg += '2. 「データベースを作成」をクリック\n\n';
+          msg += '3. 重要: 「Cloud Firestore（ネイティブモード）」を選択\n   （Datastore モードではない）\n\n';
+          msg += '4. ロケーション: asia-northeast1 (Tokyo) を選択\n\n';
+          msg += '5. セキュリティルール: 本番モードで開始\n\n';
+          msg += '6. 作成後、ターミナルで:\n   firebase deploy --only firestore:rules\n\n';
+          msg += '※ プロジェクトの「デフォルトの GCP リソースのロケーション」が未設定の場合、Firebase Console → プロジェクトの設定 → 一般 で asia-northeast1 を設定してください。';
+        }
+        el.textContent = msg;
+      }
+    }
+    run();
+  </script>
+</body>
+</html>

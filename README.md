@@ -76,7 +76,6 @@ python3 -m http.server 8080
 2. メニュー「📤 公開トリップをエクスポート」で `public-trips.json` を取得（ログイン時はローカルを圧縮して保存、非ログイン時はサーバーからダウンロード）
 3. `data/public-trips.json` を airgo フォルダの data フォルダに配置
 4. **GitHub Actions**: `data/public-trips.json` をリポジトリにコミットすると main への push で自動デプロイ
-5. **手動デプロイ**: `./deploy.sh` で Cloud Run にデプロイ
 
 詳細は [DEPLOY.md](DEPLOY.md) を参照。https://airgo.ktrips.net で公開可能。
 

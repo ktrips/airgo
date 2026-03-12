@@ -3,8 +3,12 @@
  * firebase-config.js の FIREBASE_CONFIG を読み込み、Firebase を初期化します。
  */
 (function() {
-  if (typeof firebase === 'undefined' || typeof FIREBASE_CONFIG === 'undefined') {
-    console.warn('Firebase: 未設定。firebase-config.example.js を firebase-config.js にコピーし、Firebase Console の値を入力してください。');
+  if (typeof firebase === 'undefined') {
+    console.warn('Firebase: firebase の CDN が読み込まれていません。');
+    return;
+  }
+  if (typeof FIREBASE_CONFIG === 'undefined') {
+    console.warn('Firebase: firebase-config.js が読み込まれていません（404の可能性）。ローカルではファイルの存在を確認し、本番では GitHub Secrets の FIREBASE_CONFIG_JS を設定してください。');
     return;
   }
   if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
@@ -15,7 +19,9 @@
     const app = firebase.initializeApp(FIREBASE_CONFIG);
     window.firebaseApp = app;
     window.firebaseAuth = firebase.auth(app);
-    window.firebaseDb = firebase.firestore(app);
+    const db = firebase.firestore(app);
+    db.settings({ ignoreUndefinedProperties: true });
+    window.firebaseDb = db;
     console.log('Firebase: 初期化完了');
   } catch (err) {
     console.error('Firebase: 初期化エラー', err);

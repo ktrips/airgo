@@ -15,9 +15,13 @@ set -e
 echo "Firebase Hosting へデプロイします..."
 echo ""
 
-# 公開トリップの確認
-if [ -f "data/public-trips.json" ]; then
+# 公開トリップの確認（.gz 優先）
+if [ -f "data/public-trips.json.gz" ]; then
+  TRIP_FILE="data/public-trips.json.gz"
+elif [ -f "data/public-trips.json" ]; then
   TRIP_FILE="data/public-trips.json"
+elif [ -f "public-trips.json.gz" ]; then
+  TRIP_FILE="public-trips.json.gz"
 elif [ -f "public-trips.json" ]; then
   TRIP_FILE="public-trips.json"
 else
@@ -25,6 +29,7 @@ else
   echo "  空のファイルを作成します: mkdir -p data && echo '[]' > data/public-trips.json"
   mkdir -p data
   echo '[]' > data/public-trips.json
+  TRIP_FILE="data/public-trips.json"
 fi
 TRIP_SIZE=$(wc -c < "$TRIP_FILE")
 echo "public-trips.json: $TRIP_SIZE bytes"

@@ -36,6 +36,9 @@ jobs:
             if [[ -f public-trips.json ]]; then
               cp public-trips.json data/public-trips.json
               echo "public-trips.json を data/ にコピーしました"
+            elif [[ -f public-trips.json.gz ]]; then
+              gunzip -c public-trips.json.gz > data/public-trips.json
+              echo "public-trips.json.gz を解凍して data/ に配置しました"
             else
               echo '[]' > data/public-trips.json
               echo "⚠ data/public-trips.json がなかったため空の配列を作成しました"

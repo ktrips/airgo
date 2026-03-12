@@ -7,3 +7,9 @@ Arc/
 
 # Firebase 設定（API キーを含むためコミットしない）
 firebase-config.js
+
+# Firebase CLI キャッシュ
+.firebase/
+
+# macOS
+.DS_Store

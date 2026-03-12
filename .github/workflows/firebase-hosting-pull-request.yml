@@ -13,7 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci && npm run build
+
+      - name: Create firebase-config.js
+        env:
+          FIREBASE_CONFIG_JS: ${{ secrets.FIREBASE_CONFIG_JS }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG_JS" ]; then
+            printf '%s' "$FIREBASE_CONFIG_JS" > firebase-config.js
+          else
+            cp firebase-config.example.js firebase-config.js
+          fi
+
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

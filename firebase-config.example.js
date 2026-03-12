@@ -5,6 +5,8 @@
  *
  * Firebase Console: https://console.firebase.google.com/
  * プロジェクト設定 → 一般 → マイアプリ → 設定オブジェクト
+ *
+ * Firestore エラー(5)の場合: Firestore Database をネイティブモード・asia-northeast1 で作成してください。
  */
 const FIREBASE_CONFIG = {
   apiKey: "YOUR_API_KEY",

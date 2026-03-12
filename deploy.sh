@@ -18,14 +18,18 @@ echo "Region: $REGION"
 echo "Service: $SERVICE_NAME"
 echo ""
 
-# 公開トリップの確認（data/public-trips.json または public-trips.json）
-if [ -f "data/public-trips.json" ]; then
+# 公開トリップの確認（.gz または .json）
+if [ -f "data/public-trips.json.gz" ]; then
+  TRIP_FILE="data/public-trips.json.gz"
+elif [ -f "data/public-trips.json" ]; then
   TRIP_FILE="data/public-trips.json"
+elif [ -f "public-trips.json.gz" ]; then
+  TRIP_FILE="public-trips.json.gz"
 elif [ -f "public-trips.json" ]; then
   TRIP_FILE="public-trips.json"
 else
   echo "エラー: public-trips.json がありません。"
-  echo "  data/public-trips.json または public-trips.json を配置してください。"
+  echo "  data/public-trips.json.gz または data/public-trips.json を配置してください。"
   echo "  空のファイル: mkdir -p data && echo '[]' > data/public-trips.json"
   exit 1
 fi

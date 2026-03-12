@@ -20,11 +20,7 @@
       "Dockerfile",
       "docker-entrypoint.sh",
       "nginx.conf.template",
-      "cloudbuild.yaml",
-      ".dockerignore",
-      "deploy.sh",
-      "deploy-firebase.sh",
-      "DEPLOY.md"
+      ".dockerignore"
     ]
   }
 }

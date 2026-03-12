@@ -3,9 +3,6 @@
 .gitignore
 *.md
 .dockerignore
-cloudbuild.yaml
-deploy.sh
-DEPLOY.md
 .env
 *.log
 Arc/

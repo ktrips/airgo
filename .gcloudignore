@@ -1,12 +1,10 @@
 # デプロイに含めないファイル（data/ フォルダは必ず含める）
 # 注: data/public-trips.json は除外しないこと
-# 注: cloudbuild.yaml は GitHub Actions で gcloud builds submit に必要なので除外しない
 .git
 .gitignore
 .gcloudignore
 *.md
 .dockerignore
-deploy.sh
 .env
 *.log
 Arc/
