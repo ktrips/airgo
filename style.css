@@ -2552,6 +2552,10 @@ select {
 .public-trips-section-header {
   margin-top: 0.75rem;
   margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 .public-trips-section-header:first-child {
   margin-top: 0;
@@ -2568,6 +2572,53 @@ select {
 }
 .public-trips-section-link:hover {
   text-decoration: underline;
+}
+.public-trips-section-anime-btn {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+.public-trip-section-anime-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 1rem;
+  cursor: pointer;
+  z-index: 1;
+}
+.public-trip-section-anime-btn:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+.mobile-section-card .public-trip-card-inner {
+  position: relative;
+}
+.section-anime-menu {
+  position: fixed;
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 0.25rem 0;
+  min-width: 140px;
+}
+.section-anime-menu-item {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.section-anime-menu-item:hover {
+  background: var(--bg-hover, #f0f0f0);
+}
+.section-anime-menu-sep {
+  height: 1px;
+  background: var(--border, #ddd);
+  margin: 0.25rem 0;
 }
 
 .header-controls-sep {

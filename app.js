@@ -2476,6 +2476,123 @@ function createRouteMapPngDataUrl() {
   });
 }
 
+let _sectionAnimeMenuEl = null;
+
+/** セクションアニメ生成メニューを開く（表紙・ページ選択） */
+async function openSectionAnimeMenu(sectionName, trips, anchorEl) {
+  if (_sectionAnimeMenuEl) {
+    _sectionAnimeMenuEl.remove();
+    _sectionAnimeMenuEl = null;
+  }
+  const sectionId = getSectionId(sectionName);
+  const existingItems = sectionId ? await getAnimeAllForTripDisplay(sectionId) : [];
+  const hasExisting = existingItems.length > 0;
+
+  const menu = document.createElement('div');
+  menu.className = 'section-anime-menu';
+  let itemsHtml = '';
+  if (hasExisting) {
+    itemsHtml += '<div class="section-anime-menu-item section-anime-menu-view" data-type="view">アニメを表示</div><div class="section-anime-menu-sep"></div>';
+  }
+  itemsHtml += `
+    <div class="section-anime-menu-item" data-type="cover_aruku">歩き方風表紙</div>
+    <div class="section-anime-menu-item" data-type="cover_jump">ジャンプ風表紙</div>
+    <div class="section-anime-menu-item" data-type="cover_popeye">雑誌風表紙</div>
+    <div class="section-anime-menu-item" data-type="q1">1/4ページ</div>
+    <div class="section-anime-menu-item" data-type="q2">2/4ページ</div>
+    <div class="section-anime-menu-item" data-type="q3">3/4ページ</div>
+    <div class="section-anime-menu-item" data-type="q4">4/4ページ</div>
+  `;
+  menu.innerHTML = itemsHtml;
+  document.body.appendChild(menu);
+  _sectionAnimeMenuEl = menu;
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = rect.left + 'px';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.zIndex = '10000';
+  const close = () => {
+    if (_sectionAnimeMenuEl === menu) {
+      menu.remove();
+      _sectionAnimeMenuEl = null;
+    }
+    document.removeEventListener('click', close);
+  };
+  setTimeout(() => document.addEventListener('click', close), 0);
+  menu.querySelectorAll('.section-anime-menu-item').forEach(item => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      const type = item.dataset.type;
+      close();
+      if (type === 'view') {
+        openAnimeFromData(existingItems[0].id, {
+          animeIds: existingItems.map(x => x.id),
+          currentIndex: 0
+        });
+      } else if (type.startsWith('cover_')) {
+        generateSectionAnime(sectionName, trips, type.replace('cover_', ''));
+      } else {
+        generateSectionAnimePage(sectionName, trips, type);
+      }
+    };
+  });
+}
+
+/** セクションIDを生成（アニメ保存用） */
+function getSectionId(sectionName) {
+  if (!sectionName || typeof sectionName !== 'string') return null;
+  const safe = sectionName.replace(/\s+/g, '_').replace(/[^\w\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fa0_-]/g, '').slice(0, 50);
+  return safe ? '_section_' + safe : null;
+}
+
+/** セクション内の全トリップから写真・旅行記・ブログを集約 */
+async function aggregateSectionData(sectionName, trips) {
+  if (!trips?.length) return null;
+  const allPhotos = [];
+  const intros = [];
+  const closings = [];
+  let blogContent = '';
+  let tripName = sectionName || '旅行';
+
+  for (const trip of trips) {
+    const tripId = trip._fromServer ? 'public_' + trip.id : trip.id;
+    const rawId = trip.id;
+    let html = await loadTravelogueHtmlFromDB(tripId);
+    if (!html) html = await loadTravelogueHtmlFromDB(rawId);
+    const pdfData = html ? extractPdfDataFromTravelogueHtml(html) : null;
+
+    if (pdfData?.photos?.length) {
+      for (const p of pdfData.photos) {
+        if (p?.data) allPhotos.push({ ...p, placeName: p.placeName || '', placeDesc: p.placeDesc || '' });
+      }
+      if (pdfData.intro) intros.push(pdfData.intro);
+      if (pdfData.closing) closings.push(pdfData.closing);
+      if (pdfData.tripName && !tripName) tripName = pdfData.tripName;
+    } else if (trip.photos?.length) {
+      for (const p of trip.photos) {
+        if (p?.data) {
+          allPhotos.push({
+            data: p.data,
+            mime: p.mime || 'image/jpeg',
+            placeName: p.name || p.placeName || p.description || '',
+            placeDesc: p.description || p.placeDesc || ''
+          });
+        }
+      }
+    }
+
+    if (trip.url) {
+      const bc = await fetchTravelBlogContent(trip.url);
+      if (bc) blogContent += (blogContent ? '\n\n' : '') + `[${trip.name || 'トリップ'}]\n${bc}`;
+    }
+  }
+
+  if (allPhotos.length === 0) return null;
+  const intro = intros.join('\n\n').slice(0, 500);
+  const closing = closings.join('\n\n').slice(0, 300);
+  return { photos: allPhotos, intro, closing, blogContent: blogContent.slice(0, 4000), tripName };
+}
+
 /** リンクされた旅行ブログの本文を取得（CORS対応） */
 async function fetchTravelBlogContent(url) {
   if (!url || typeof url !== 'string') return null;
@@ -2844,6 +2961,374 @@ Style: Mimic the POPEYE magazine cover aesthetic FAITHFULLY - clean typography, 
     if (contentEl) contentEl.innerHTML = `<p class="anime-error">${escapeHtml(err.message || '生成に失敗しました')}</p>`;
   }
   if (animeBtn) animeBtn.disabled = false;
+}
+
+/** セクションの旅行アニメ表紙を生成（配下トリップの写真・旅行記・ブログを総合） */
+async function generateSectionAnime(sectionName, trips, coverStyle = 'aruku') {
+  const sectionId = getSectionId(sectionName);
+  if (!sectionId) {
+    setStatus('セクション名が無効です', true);
+    return;
+  }
+  const apiKey = getAiApiKey()?.trim();
+  if (!apiKey) {
+    setStatus('AI API Key が設定されていません。メニュー → 設定 から Gemini API Key を入力してください。', true);
+    return;
+  }
+  if (!getAiApiProvider().startsWith('gemini')) {
+    setStatus('旅行アニメ生成には Gemini API が必要です。メニュー → 設定 で AI API を Gemini に切り替えてください。', true);
+    return;
+  }
+  setStatus('セクションのデータを集約中…');
+  const pdfData = await aggregateSectionData(sectionName, trips);
+  if (!pdfData || !pdfData.photos?.length) {
+    setStatus('セクション内に写真データがありません。旅行記または写真のあるトリップを追加してください。', true);
+    return;
+  }
+  setStatus('旅行アニメを生成中…（セクション表紙）');
+  const modal = document.getElementById('animeModal');
+  const contentEl = document.getElementById('animeModalContent');
+  if (contentEl) contentEl.innerHTML = '<p class="anime-loading">生成中…</p>';
+  if (modal) modal.classList.add('open');
+  try {
+    const tripName = (pdfData.tripName || sectionName || '旅行').slice(0, 30);
+    const intro = (pdfData.intro || '').slice(0, 300);
+    const closing = (pdfData.closing || '').slice(0, 150);
+    const placeList = (pdfData.photos || []).slice(0, 8).map((p, i) =>
+      `${i + 1}. ${(p.placeName || '').slice(0, 20)}: ${(p.placeDesc || '').slice(0, 80)}`
+    ).join('\n');
+    const storySummary = [intro, placeList, closing, pdfData.blogContent ? `ブログ参考: ${pdfData.blogContent.slice(0, 500)}` : ''].filter(Boolean).join('\n\n');
+
+    let coverTitle = tripName;
+    try {
+      const provider = getAiApiProvider();
+      const geminiModel = provider === 'gemini-pro' ? 'gemini-2.5-pro' : 'gemini-2.0-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const tr = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `以下の旅行記から、短く印象的な題名を1つだけ生成してください。例：しまなみ、瀬戸内、尾道、道後温泉。3〜6文字程度の日本語で、他の説明は不要。\n\n${storySummary}` }] }],
+          generationConfig: { maxOutputTokens: 32 }
+        })
+      });
+      if (tr.ok) {
+        const td = await tr.json();
+        const t = td?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (t && t.length <= 12) coverTitle = t.replace(/^[「『"]|["』」]$/g, '');
+      }
+    } catch (_) {}
+
+    const firstTrip = trips[0];
+    const rawTripId = firstTrip?._fromServer ? firstTrip.id : (firstTrip?.id || '');
+    const charPhotos = getCharacterPhotos(rawTripId).filter(p => p.data);
+    const traveloguePhotos = (pdfData.photos || []).filter(p => p.data).slice(0, 2);
+    const refPhotos = charPhotos.length > 0 ? charPhotos.slice(0, 3) : traveloguePhotos;
+    const useCharPhotos = charPhotos.length > 0;
+    const parts = [];
+    for (const p of refPhotos) {
+      parts.push({ inlineData: { mimeType: p.mime || 'image/jpeg', data: p.data } });
+    }
+    const charInstruction = useCharPhotos
+      ? 'CRITICAL: The reference photos above show the MAIN CHARACTER (主人公). Draw this person as the LARGE protagonist in the CENTER. Use their face, hair, body type, and clothing to create an anime version. This person MUST be the focal point.'
+      : 'LARGE main character (protagonist) in the CENTER - draw the person/people from the reference photos above in anime style. Use their appearance, pose, and clothing as reference to create an anime version of them as the protagonist.';
+
+    const coverPrompts = {
+      aruku: `Create a single JPEG image in the style of "地球の歩き方" (Aruku / Earth's Walking Guide) - a famous Japanese travel guidebook series.
+
+CRITICAL - Do NOT include any of these in the image: "ジャンプ", "集英社", "Shueisha", "Weekly Shonen Jump", "週刊少年ジャンプ", or similar real brand names. No magazine or manga publisher logos.
+
+IMPORTANT: Use VERTICAL/PORTRAIT format (縦長). The image must be tall (height > width), like 9:16 aspect ratio, suitable for mobile viewing.
+
+Layout requirements (地球の歩き方 style - BE FAITHFUL to this aesthetic):
+- TOP-LEFT series logo: Display "K旅の歩き方" (NOT "地球の歩き方") in the top-left corner - this is the series branding, clean typography.
+- TITLE: "${coverTitle}" - Display the title in the distinctive travel guide style: clean typography, often with a subtitle or series feel, elegant and readable. The title should feel like a travel guide cover, not a manga magazine.
+- ${charInstruction}
+- In the BACKGROUND: Travel scene illustrations - iconic destinations, landscapes, or journey moments in a travel guide aesthetic. Can include anime-style characters from the reference photos in travel settings.
+- Overall: Travel guide book cover feel - clean, inviting, suitable for a trip guide. No manga magazine elements.
+
+Story from the travelogue:
+${storySummary}
+
+Style: Mimic the 地球の歩き方 (Aruku) travel guide cover aesthetic FAITHFULLY - clean title treatment, travel-themed imagery, inviting and readable. The protagonist can be based on the reference photos. Output as high-quality JPEG in VERTICAL portrait format.`,
+      jump: `Create a single JPEG image in the style of 週刊少年ジャンプ (Weekly Shonen Jump) manga magazine cover - bold, dynamic, high-energy anime style.
+
+CRITICAL - Do NOT include "週刊少年ジャンプ", "集英社", "Shueisha", "Jump", or any real publisher/brand names in the image. Create a similar STYLE but use NO real brand text.
+
+IMPORTANT: Use VERTICAL/PORTRAIT format (縦長). The image must be tall (height > width), like 9:16 aspect ratio, suitable for mobile viewing.
+
+Layout requirements (週刊少年ジャンプ style - BE FAITHFUL to this aesthetic):
+- Bold, dynamic composition - protagonist in the center, powerful pose, manga/anime style.
+- TITLE: "${coverTitle}" - Display in bold, impactful typography typical of Shonen Jump covers. Dynamic and eye-catching.
+- ${charInstruction}
+- Background: Dynamic manga-style background - speed lines, dramatic lighting, action feel. Can include travel destinations as backdrop.
+- Overall: Shonen Jump magazine cover feel - bold, energetic, manga magazine aesthetic. NO real brand logos or text.
+
+Story from the travelogue:
+${storySummary}
+
+Style: Mimic the Shonen Jump magazine cover aesthetic FAITHFULLY - bold typography, dynamic composition, manga energy. The protagonist can be based on the reference photos. Output as high-quality JPEG in VERTICAL portrait format.`,
+      popeye: `Create a single JPEG image in the style of POPEYE magazine - clean, modern, urban/culture travel magazine cover.
+
+CRITICAL - Do NOT include "POPEYE", "マガジンハウス", "Magazine House", or any real brand names in the image. Create a similar STYLE but use NO real brand text.
+
+IMPORTANT: Use VERTICAL/PORTRAIT format (縦長). The image must be tall (height > width), like 9:16 aspect ratio, suitable for mobile viewing.
+
+Layout requirements (POPEYE style - BE FAITHFUL to this aesthetic):
+- TITLE: "${coverTitle}" - Display in POPEYE's distinctive style: clean sans-serif, modern, urban/culture magazine typography. Elegant and readable.
+- ${charInstruction}
+- Background: Urban travel aesthetic - cityscapes, lifestyle scenes, culture/travel imagery. Can blend illustration with magazine-cover feel. Travel destinations in a refined, editorial style.
+- Overall: POPEYE magazine cover feel - clean, modern, urban lifestyle, culture/travel focus. Sophisticated and inviting.
+
+Story from the travelogue:
+${storySummary}
+
+Style: Mimic the POPEYE magazine cover aesthetic FAITHFULLY - clean typography, modern editorial layout, urban travel culture. The protagonist can be based on the reference photos. Output as high-quality JPEG in VERTICAL portrait format.`
+    };
+    const promptText = coverPrompts[coverStyle] || coverPrompts.aruku;
+    parts.push({ text: promptText });
+
+    const requestBody = {
+      contents: [{ parts }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageGenerationConfig: ANIME_IMAGE_GEN }
+    };
+    const requestBodyFallback = { contents: [{ parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } };
+    const IMAGE_MODELS = ['gemini-2.5-flash-preview-image', 'gemini-2.0-flash-preview-image-generation', 'gemini-3.1-flash-image-preview'];
+    let res;
+    for (const IMAGE_MODEL of IMAGE_MODELS) {
+      const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      res = await fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+      if (res.ok) break;
+      if (res.status === 400) {
+        res = await fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBodyFallback) });
+        if (res.ok) break;
+      }
+      if (res.status !== 404) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.error?.message || `API ${res.status}`);
+      }
+    }
+    if (!res?.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error?.message || '画像生成モデルが見つかりません');
+    }
+    const data = await res.json();
+    const responseParts = data?.candidates?.[0]?.content?.parts || [];
+    const imgPart = responseParts.find(x => x.inlineData || x.inline_data);
+    const idata = imgPart?.inlineData || imgPart?.inline_data;
+    if (!idata?.data) throw new Error('画像の生成に失敗しました');
+
+    let jpegBase64 = idata.data;
+    const mime = idata.mimeType || idata.mime_type || 'image/png';
+    if (mime !== 'image/jpeg') {
+      const blob = new Blob([Uint8Array.from(atob(idata.data), c => c.charCodeAt(0))], { type: mime });
+      const canvas = document.createElement('canvas');
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = reject;
+        i.src = URL.createObjectURL(blob);
+      });
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(img.src);
+      jpegBase64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+    }
+    let thumbData = jpegBase64;
+    try {
+      const enc = await resizeBase64ToBase64('image/jpeg', jpegBase64, ANIME_THUMB_W, ANIME_THUMB_H, 0.85);
+      if (enc?.data) thumbData = enc.data;
+    } catch (_) {}
+    const coverImage = { mime: 'image/jpeg', data: jpegBase64 };
+    const thumbnail = { mime: 'image/jpeg', data: thumbData };
+    await saveAnimeToDB(sectionId, tripName, [], thumbnail, [], coverImage, { animeType: 'cover', order: 0 });
+
+    if (contentEl) {
+      contentEl.innerHTML = '';
+      const wrap = document.createElement('div');
+      wrap.className = 'anime-cover-wrap';
+      const thumb = document.createElement('button');
+      thumb.type = 'button';
+      thumb.className = 'anime-cover-thumb';
+      const thumbImg = document.createElement('img');
+      thumbImg.src = `data:image/jpeg;base64,${thumbData}`;
+      thumbImg.alt = tripName;
+      thumb.appendChild(thumbImg);
+      thumb.onclick = () => {
+        const blob = new Blob([Uint8Array.from(atob(jpegBase64), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+        window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer');
+      };
+      wrap.appendChild(thumb);
+      contentEl.appendChild(wrap);
+    }
+    setStatus('セクションの旅行アニメ表紙を生成しました');
+    await renderPublicTripsPanel();
+  } catch (err) {
+    setStatus(err.message || 'セクションアニメ表紙の生成に失敗しました', true);
+    if (contentEl) contentEl.innerHTML = `<p class="anime-error">${escapeHtml(err.message || '生成に失敗しました')}</p>`;
+  }
+}
+
+/** セクションの旅行アニメページを生成（5コマ漫画） */
+async function generateSectionAnimePage(sectionName, trips, part) {
+  const sectionId = getSectionId(sectionName);
+  if (!sectionId) {
+    setStatus('セクション名が無効です', true);
+    return;
+  }
+  const apiKey = getAiApiKey()?.trim();
+  if (!apiKey) {
+    setStatus('AI API Key が設定されていません。メニュー → 設定 から Gemini API Key を入力してください。', true);
+    return;
+  }
+  if (!getAiApiProvider().startsWith('gemini')) {
+    setStatus('旅行アニメページ生成には Gemini API が必要です。メニュー → 設定 で AI API を Gemini に切り替えてください。', true);
+    return;
+  }
+  setStatus('セクションのデータを集約中…');
+  const pdfData = await aggregateSectionData(sectionName, trips);
+  if (!pdfData || !pdfData.photos?.length) {
+    setStatus('セクション内に写真データがありません。', true);
+    return;
+  }
+  const n = pdfData.photos.length;
+  const quarterMap = { q1: 0, q2: 1, q3: 2, q4: 3 };
+  const q = quarterMap[part] ?? 0;
+  const start = Math.floor((n * q) / 4);
+  const end = Math.floor((n * (q + 1)) / 4);
+  const halfPhotos = (pdfData.photos || []).slice(start, end).slice(0, 5);
+  if (halfPhotos.length === 0) {
+    setStatus(`${(q + 1)}/4の写真がありません`, true);
+    return;
+  }
+  const tripName = (pdfData.tripName || sectionName || '旅行').slice(0, 30);
+  const intro = (pdfData.intro || '').slice(0, 200);
+  const closing = (pdfData.closing || '').slice(0, 100);
+  const placeList = halfPhotos.map((p, i) =>
+    `${i + 1}. ${(p.placeName || '').slice(0, 20)}: ${(p.placeDesc || '').slice(0, 80)}`
+  ).join('\n');
+  const storySummary = [intro, placeList, closing, pdfData.blogContent ? `ブログ参考: ${pdfData.blogContent.slice(0, 500)}` : ''].filter(Boolean).join('\n\n');
+
+  setStatus('旅行アニメページを生成中…（5コマ漫画）');
+  const modal = document.getElementById('animeModal');
+  const contentEl = document.getElementById('animeModalContent');
+  if (contentEl) contentEl.innerHTML = '<p class="anime-loading">生成中…</p>';
+  if (modal) modal.classList.add('open');
+  try {
+    const firstTrip = trips[0];
+    const rawTripId = firstTrip?._fromServer ? firstTrip.id : (firstTrip?.id || '');
+    const charPhotos = getCharacterPhotos(rawTripId).filter(p => p.data);
+    const scenePhotos = halfPhotos.filter(p => p.data).slice(0, 3);
+    const useCharPhotos = charPhotos.length > 0;
+    const refPhotos = useCharPhotos
+      ? [...charPhotos.slice(0, 2), ...scenePhotos.slice(0, 2)].slice(0, 4)
+      : scenePhotos;
+    const parts = [];
+    for (const p of refPhotos) {
+      parts.push({ inlineData: { mimeType: p.mime || 'image/jpeg', data: p.data } });
+    }
+    const charInstruction = useCharPhotos
+      ? 'CRITICAL: The first reference photo(s) show the MAIN CHARACTER (主人公). Draw this person in EVERY panel as the protagonist. Use their face, hair, and style. The other photos show trip scenes for background reference.'
+      : 'Show scenes from the trip based on the reference photos - draw in anime/manga style. The people in the photos are the main characters.';
+    parts.push({
+      text: `Create a single JPEG image: ONE manga page with exactly 5 comic panels (5コマ漫画).
+
+IMPORTANT requirements:
+- VERTICAL/PORTRAIT format (縦長) - image must be tall (height > width), like 9:16 aspect ratio
+- FULL COLOR (カラー) - vibrant colors, no grayscale or monochrome
+- 1K resolution (1024px equivalent)
+
+Layout: 5 panels stacked vertically or in a vertical grid. Each panel must:
+- ${charInstruction}
+- Include a speech bubble (吹き出し) with Japanese text - short dialogue, thought, or caption (1-2 short sentences per panel)
+- Be clearly separated with panel borders
+- Tell a coherent story of the journey in order
+
+Story from the travelogue (part ${(q + 1)}/4 of the section):
+${storySummary}
+
+Style: Shonen manga style (少年漫画風), full color, clear lines, expressive characters, readable speech bubbles. Do NOT include any real brand names. Output as high-quality JPEG in VERTICAL portrait format.`
+    });
+
+    const requestBodyWithConfig = {
+      contents: [{ parts }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageGenerationConfig: ANIME_IMAGE_GEN }
+    };
+    const requestBodyFallback = { contents: [{ parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } };
+    const IMAGE_MODELS = ['gemini-2.5-flash-preview-image', 'gemini-2.0-flash-preview-image-generation', 'gemini-3.1-flash-image-preview'];
+    let res;
+    for (const IMAGE_MODEL of IMAGE_MODELS) {
+      const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      res = await fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBodyWithConfig) });
+      if (res.ok) break;
+      if (res.status === 400) {
+        res = await fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBodyFallback) });
+        if (res.ok) break;
+      }
+      if (res.status !== 404) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.error?.message || `API ${res.status}`);
+      }
+    }
+    if (!res?.ok) throw new Error('画像生成モデルが見つかりません');
+    const data = await res.json();
+    const imgPart = (data?.candidates?.[0]?.content?.parts || []).find(x => x.inlineData || x.inline_data);
+    const idata = imgPart?.inlineData || imgPart?.inline_data;
+    if (!idata?.data) throw new Error('画像の生成に失敗しました');
+
+    let jpegBase64 = idata.data;
+    const mime = idata.mimeType || idata.mime_type || 'image/png';
+    if (mime !== 'image/jpeg') {
+      const blob = new Blob([Uint8Array.from(atob(idata.data), c => c.charCodeAt(0))], { type: mime });
+      const canvas = document.createElement('canvas');
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = reject;
+        i.src = URL.createObjectURL(blob);
+      });
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(img.src);
+      jpegBase64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+    }
+    let thumbData = jpegBase64;
+    try {
+      const enc = await resizeBase64ToBase64('image/jpeg', jpegBase64, ANIME_THUMB_W, ANIME_THUMB_H, 0.85);
+      if (enc?.data) thumbData = enc.data;
+    } catch (_) {}
+    const pageImages = [{ mime: 'image/jpeg', data: jpegBase64 }];
+    const thumbnail = { mime: 'image/jpeg', data: thumbData };
+    const pages = await getAnimePagesByTripId(sectionId);
+    const order = pages.length > 0 ? Math.max(...pages.map(p => p.order ?? 0)) + 1 : Date.now();
+    await saveAnimeToDB(sectionId, tripName, [], thumbnail, pageImages, null, { animeType: 'page', half: part, order });
+
+    if (contentEl) {
+      contentEl.innerHTML = '';
+      const wrap = document.createElement('div');
+      wrap.className = 'anime-cover-wrap';
+      const thumb = document.createElement('button');
+      thumb.type = 'button';
+      thumb.className = 'anime-cover-thumb';
+      const thumbImg = document.createElement('img');
+      thumbImg.src = `data:image/jpeg;base64,${thumbData}`;
+      thumbImg.alt = `${tripName} ${(q + 1)}/4`;
+      thumb.appendChild(thumbImg);
+      thumb.onclick = () => {
+        const blob = new Blob([Uint8Array.from(atob(jpegBase64), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+        window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer');
+      };
+      wrap.appendChild(thumb);
+      contentEl.appendChild(wrap);
+    }
+    setStatus('セクションの旅行アニメページを生成しました');
+    await renderPublicTripsPanel();
+  } catch (err) {
+    setStatus(err.message || 'セクションアニメページの生成に失敗しました', true);
+    if (contentEl) contentEl.innerHTML = `<p class="anime-error">${escapeHtml(err.message || '生成に失敗しました')}</p>`;
+  }
 }
 
 /** 旅行アニメページを生成（5コマ漫画・吹き出し入り） */
@@ -4819,13 +5304,22 @@ async function renderPublicTripsPanel() {
           <div class="public-trip-info">
             <h4 class="public-trip-name">${escapeHtml(group.sectionName)}（${group.trips.length}件）</h4>
           </div>
+          <button type="button" class="public-trip-section-anime-btn" title="セクションのアニメを生成">🎬</button>
         </div>
       `;
-      card.onclick = () => {
+      card.onclick = (e) => {
+        if (e.target.closest('.public-trip-section-anime-btn')) return;
         _mobileShowSections = false;
         _mobileSelectedSection = i;
         renderPublicTripsPanel();
       };
+      const animeBtn = card.querySelector('.public-trip-section-anime-btn');
+      if (animeBtn) {
+        animeBtn.onclick = (e) => {
+          e.stopPropagation();
+          openSectionAnimeMenu(group.sectionName, group.trips, animeBtn);
+        };
+      }
       listEl.appendChild(card);
     }
     return;
@@ -4857,7 +5351,17 @@ async function renderPublicTripsPanel() {
       if (group.sectionUrl) {
         headerHtml = `<a href="${escapeHtml(group.sectionUrl)}" target="_blank" rel="noopener noreferrer" class="public-trips-section-link">${headerHtml}</a>`;
       }
-      header.innerHTML = `<h4 class="public-trips-section-title">${headerHtml}</h4>`;
+      header.innerHTML = `
+        <h4 class="public-trips-section-title">${headerHtml}</h4>
+        <button type="button" class="public-trips-section-anime-btn btn btn-secondary btn-sm" title="セクションのアニメを生成">🎬 アニメ生成</button>
+      `;
+      const animeBtn = header.querySelector('.public-trips-section-anime-btn');
+      if (animeBtn) {
+        animeBtn.onclick = (e) => {
+          e.stopPropagation();
+          openSectionAnimeMenu(group.sectionName, group.trips, animeBtn);
+        };
+      }
       listEl.appendChild(header);
     }
     for (const trip of group.trips) {
