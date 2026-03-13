@@ -3879,6 +3879,8 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   else currentTripId = tripId;
   isNewTrip = false;
   _showTripListInPanel = false;
+  _mobileShowSections = true;
+  _mobileSelectedSection = null;
   _currentViewingTripId = tripId;
 
   photos.forEach(p => {
@@ -4709,6 +4711,8 @@ let _tripMenuMap = null;
 let _tripMenuUrls = [];
 let _tripMenuMapRenderId = 0;
 let _showTripListInPanel = false;
+let _mobileShowSections = true; // モバイル：trueならセクション一覧、falseならトリップ一覧
+let _mobileSelectedSection = null; // モバイルで選択されたセクション
 
 async function renderPublicTripsPanel() {
   const panel = document.getElementById('publicTripsPanel');
@@ -4751,9 +4755,51 @@ async function renderPublicTripsPanel() {
   }
   let globalIdx = 0;
   const isMobile = isMobileView();
-  const groupsToRender = isMobile
+
+  // モバイル：セクション一覧を表示
+  if (isMobile && _mobileShowSections && groups.length > 1) {
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      if (!group.sectionName || group.trips.length === 0) continue;
+      const card = document.createElement('div');
+      card.className = 'public-trip-card mobile-section-card';
+      card.innerHTML = `
+        <div class="public-trip-card-inner">
+          <div class="public-trip-info">
+            <h4 class="public-trip-name">${escapeHtml(group.sectionName)}（${group.trips.length}件）</h4>
+          </div>
+        </div>
+      `;
+      card.onclick = () => {
+        _mobileShowSections = false;
+        _mobileSelectedSection = i;
+        renderPublicTripsPanel();
+      };
+      listEl.appendChild(card);
+    }
+    return;
+  }
+
+  // モバイル：トリップ一覧を表示（セクション選択時）
+  const groupsToRender = (isMobile && !_mobileShowSections && _mobileSelectedSection != null)
+    ? [groups[_mobileSelectedSection]]
+    : isMobile
     ? [{ sectionName: null, sectionUrl: null, trips: [...displayTrips].sort((a, b) => getTripGpsDateTimestamp(a) - getTripGpsDateTimestamp(b)) }]
     : groups;
+
+  // モバイル：戻るボタンを表示
+  if (isMobile && !_mobileShowSections && _mobileSelectedSection != null && groups.length > 1) {
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'mobile-back-to-sections';
+    backBtn.textContent = '← 戻る';
+    backBtn.onclick = () => {
+      _mobileShowSections = true;
+      _mobileSelectedSection = null;
+      renderPublicTripsPanel();
+    };
+    listEl.appendChild(backBtn);
+  }
   for (const group of groupsToRender) {
     if (!isMobile && group.sectionName && group.trips.length > 0) {
       const header = document.createElement('div');
@@ -4938,6 +4984,19 @@ async function renderTripMenu() {
   navRow.appendChild(titleWrap);
   navRow.appendChild(nextBtn);
   headerSection.appendChild(navRow);
+
+  // モバイル：トリップ一覧に戻るボタン
+  if (isMobileView()) {
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'mobile-back-to-trip-list';
+    backBtn.textContent = '← 戻る';
+    backBtn.onclick = () => {
+      _showTripListInPanel = true;
+      renderPublicTripsPanel();
+    };
+    headerSection.appendChild(backBtn);
+  }
 
   const durationStr = formatDuration(gpxSummary?.durationHours) || '';
   const dateWithDuration = [dateStr, durationStr].filter(Boolean).join(' ');
@@ -7191,6 +7250,8 @@ async function setup() {
   const goToTripList = (e) => {
     e.preventDefault();
     _showTripListInPanel = true;
+    _mobileShowSections = true;
+    _mobileSelectedSection = null;
     renderPublicTripsPanel();
     if (isMobileView()) {
       document.getElementById('publicTripsPanel')?.classList.add('trip-panel-manually-expanded');
