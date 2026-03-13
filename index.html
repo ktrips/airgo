@@ -87,6 +87,23 @@
               <span>公開する（ログインなしで閲覧可能）</span>
             </label>
           </div>
+          <div class="menu-field editor-only" id="tripParentField">
+            <label class="menu-checkbox">
+              <input type="checkbox" id="tripParentInput" title="親トリップは写真・GPSなしで保存可能。子トリップをまとめるフォルダとして使います">
+              <span>親トリップ（写真・GPS不要）</span>
+            </label>
+            <div class="menu-field" id="tripParentSelectWrap" style="display:none">
+              <label for="tripParentSelect">親トリップ</label>
+              <select id="tripParentSelect" class="menu-select">
+                <option value="">— なし —</option>
+              </select>
+            </div>
+            <div class="trip-parent-children-wrap" id="tripParentChildrenWrap" style="display:none">
+              <label class="trip-parent-children-title">子トリップ</label>
+              <div class="trip-parent-children-list" id="tripParentChildrenList"></div>
+              <button type="button" class="btn btn-secondary btn-sm menu-full" id="addChildTripBtn">＋ 子トリップを追加</button>
+            </div>
+          </div>
           <div class="menu-field editor-only" id="tripColorField">
             <label>ルート・ポイントの色</label>
             <div class="trip-color-picker">
@@ -151,8 +168,6 @@
           <button type="button" class="btn btn-secondary menu-full desktop-only" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
           <button type="button" class="btn btn-secondary menu-full" id="exportPublicBtn" title="ローカルの公開トリップを圧縮して保存、またはサーバーからダウンロード">📤 公開トリップをエクスポート</button>
           <button type="button" class="btn btn-primary menu-full editor-only" id="uploadPublicToFirestoreBtn" title="表示中の公開トリップ（Day1 Shimanami 等）を Firestore にアップロード">☁️ 公開トリップを Firestore にアップロード</button>
-          <button type="button" class="btn btn-secondary menu-full editor-only" id="exportAllTripsBtn" title="IndexedDB の全トリップを容量制限なく gzip 圧縮してダウンロード">📦 全トリップをダウンロード</button>
-          <button type="button" class="btn btn-secondary btn-sm menu-full editor-only" id="simpleDownloadBtn" title="表示中のトリップ一覧を即座に JSON でダウンロード（軽量・高速）">⬇ 簡易ダウンロード</button>
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
@@ -238,14 +253,12 @@
           <button type="button" class="modal-close" id="publicTripConfigClose" aria-label="閉じる">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="public-trip-config-hint">セクションでトリップをグループ化し、表示順を変更できます。右側パネルの↑↓ボタンでも並べ替え可能です。</p>
+          <p class="public-trip-config-hint">親トリップでグループ化されます。右側パネルの↑↓ボタンで並べ替え可能です。</p>
           <div class="public-trip-config-visibility" id="publicTripConfigVisibility">
             <h3 class="public-trip-config-subtitle">トリップの表示/非表示</h3>
             <p class="public-trip-config-visibility-hint">チェックを外すと右側の公開トリップ一覧に表示されません。</p>
             <div class="public-trip-config-visibility-list" id="publicTripConfigVisibilityList"></div>
           </div>
-          <div class="public-trip-config-sections" id="publicTripConfigSections"></div>
-          <button type="button" class="btn btn-secondary" id="publicTripConfigAddSection">+ セクションを追加</button>
           <div class="modal-actions">
             <button type="button" class="btn btn-primary" id="publicTripConfigSave">保存</button>
           </div>
@@ -394,6 +407,20 @@
           <span>人物写真を選択</span>
         </div>
         <div class="character-upload-preview" id="characterUploadPreview"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 親トリップ サムネイル選択モーダル -->
+  <div class="modal-overlay" id="parentThumbnailModal">
+    <div class="modal parent-thumbnail-modal">
+      <div class="modal-header">
+        <h2>サムネイルを選択</h2>
+        <button type="button" class="modal-close" id="parentThumbnailModalClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="parent-thumbnail-hint">親トリップの一覧表示に使うサムネイルを選んでください。</p>
+        <div id="parentThumbnailGrid" class="parent-thumbnail-grid"></div>
       </div>
     </div>
   </div>
