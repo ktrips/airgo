@@ -4227,7 +4227,21 @@ async function loadPublicTripsFromStaticFile() {
 /** パブリックトリップを読み込む（Firestore優先、フォールバックで静的ファイル） */
 async function loadPublicTripsFromServer() {
   try {
-    // 静的ファイルから読み込む（一時的にFirestoreをスキップ）
+    // 1. まずFirestoreから読み込む（ログイン不要、最新データ）
+    if (window.firebaseDb) {
+      console.log('Firestoreからパブリックトリップを読み込み中...');
+      const firestoreTrips = await loadPublicTripsFromFirestore();
+      if (firestoreTrips.length > 0) {
+        publicTrips = firestoreTrips;
+        console.log(`Firestoreから ${firestoreTrips.length}件のパブリックトリップを読み込みました`);
+        await processPublicTripsStamps(publicTrips);
+        await renderPublicTripsPanel();
+        if (photos.length === 0) addPublicTripMarkers();
+        return;
+      }
+    }
+
+    // 2. Firestoreが利用できない、またはトリップがない場合は静的ファイルから読み込む
     console.log('静的ファイルからパブリックトリップを読み込み中...');
     const staticTrips = await loadPublicTripsFromStaticFile();
     if (staticTrips.length > 0) {
