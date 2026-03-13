@@ -2288,7 +2288,8 @@ function buildMinimalPhotoForDB(p) {
   const lm = toLandmarkValue(p.landmarkName);
   if (lm != null) o.landmarkName = lm;
   if (p.description && String(p.description).trim()) o.description = p.description.trim();
-  if (p.url && String(p.url).trim()) o.url = p.url.trim();
+  const extUrl = (p.photoUrl || p.url || '').trim();
+  if (extUrl && !extUrl.startsWith('blob:') && !extUrl.startsWith('data:')) o.url = extUrl;
   return o;
 }
 
@@ -2301,7 +2302,9 @@ function buildMinimalPointForDB(p) {
   const lm = toLandmarkValue(p.landmarkName);
   if (lm != null) o.landmarkName = lm;
   if (p.description && String(p.description).trim()) o.description = p.description.trim();
-  if (p.url && String(p.url).trim()) o.url = p.url.trim();
+  // 外部リンクのみ保存（blob: や data: は保存しない）
+  const extUrl = (p.photoUrl || p.url || '').trim();
+  if (extUrl && !extUrl.startsWith('blob:') && !extUrl.startsWith('data:')) o.url = extUrl;
   return o;
 }
 
@@ -3650,10 +3653,10 @@ async function saveTrip(opts = {}) {
     setStatus('保存するにはログインしてください', true);
     return false;
   }
-  const name = document.getElementById('tripNameInput').value.trim();
+  let name = document.getElementById('tripNameInput').value.trim();
   if (!name) {
-    setStatus('トリップ名を入力してください', true);
-    return false;
+    name = 'トリップ';
+    document.getElementById('tripNameInput').value = name;
   }
   if (photos.length === 0) {
     setStatus('写真またはポイントを追加してください', true);
@@ -3669,8 +3672,12 @@ async function saveTrip(opts = {}) {
     let data = null;
     let mime = 'image/jpeg';
     if (p.file) {
-      const enc = await resizeImageToBase64(p.file, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
-      if (enc) { data = enc.data; mime = enc.mime; }
+      let enc = await resizeImageToBase64(p.file, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
+      if (!enc) {
+        const raw = await fileToBase64(p.file);
+        if (raw) { enc = raw; }
+      }
+      if (enc) { data = enc.data; mime = enc.mime || 'image/jpeg'; }
     } else if (p.data) {
       try {
         const enc = await resizeBase64ToBase64(p.mime || 'image/jpeg', p.data, DB_PHOTO_MAX_DIM, DB_PHOTO_MAX_DIM, DB_PHOTO_QUALITY);
@@ -3689,7 +3696,13 @@ async function saveTrip(opts = {}) {
       return buildMinimalPointForDB(p);
     }
     return null;
-  })).then(arr => arr.filter(Boolean));
+  })).then(arr => {
+    const filtered = arr.filter(Boolean);
+    if (filtered.length !== arr.length) {
+      console.warn('保存: 処理できなかった写真をスキップしました', arr.length - filtered.length, '件');
+    }
+    return filtered;
+  });
 
   if (storedPhotos.length === 0) {
     setStatus('写真またはポイントを追加してください。', true);
@@ -3726,22 +3739,25 @@ async function saveTrip(opts = {}) {
     setStatus(errMsg, true);
     return false;
   }
-  // 保存後、メモリ上の photos を更新（file → data + url に変換）
-  photos.forEach((p, i) => {
-    p._dbIndex = i;
-    const saved = storedPhotos[i];
-    if (saved && p.file) {
-      // file がある場合、保存されたデータで更新
-      p.data = saved.data;
-      p.mime = saved.mime;
-      // 古い blob URL を破棄して、新しい blob URL を生成
-      if (p.url && p.url.startsWith('blob:')) {
-        URL.revokeObjectURL(p.url);
-      }
-      p.url = base64ToUrl(saved.mime, saved.data);
-      delete p.file; // file プロパティを削除（既に data に変換済み）
-    }
+  // 保存後、メモリ上の photos を保存結果で完全に同期（表示が正しくなるよう）
+  photos.forEach((p) => {
+    if (p.url && p.url.startsWith('blob:')) URL.revokeObjectURL(p.url);
   });
+  photos = storedPhotos.map((s, i) => ({
+    name: s.name,
+    lat: s.lat,
+    lng: s.lng,
+    placeName: s.placeName || null,
+    landmarkNo: toLandmarkValue(s.landmarkNo),
+    landmarkName: toLandmarkValue(s.landmarkName),
+    description: s.description || null,
+    photoUrl: s.url || null,
+    url: s.data ? base64ToUrl(s.mime || 'image/jpeg', s.data) : null,
+    data: s.data,
+    mime: s.mime || 'image/jpeg',
+    _dbIndex: i,
+  }));
+  if (currentIndex >= photos.length) currentIndex = Math.max(0, photos.length - 1);
   currentTripId = id;
   isNewTrip = false;
   document.getElementById('tripNameInput').value = name;
@@ -3750,6 +3766,9 @@ async function saveTrip(opts = {}) {
   const colorInput = document.getElementById('tripColorInput');
   if (colorInput) colorInput.value = tripColor || PUBLIC_TRIP_COLORS[0];
   updateTripInfoDisplay(trip);
+  addPhotoMarkers();
+  renderAllPhotosStrip();
+  if (photos.length > 0) showPhoto(currentIndex, { popupOnly: true });
   await refreshTripList();
   await renderPublicTripsPanel();
   await renderTripListPanel();
@@ -4191,6 +4210,7 @@ async function loadPublicTripsFromStaticFile() {
       if (res.ok) break;
     }
     if (!res || !res.ok) {
+      console.warn('静的ファイルが見つかりません:', urls.slice(0, 2).join(', '));
       return [];
     }
     const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
@@ -4224,33 +4244,43 @@ async function loadPublicTripsFromStaticFile() {
   }
 }
 
-/** パブリックトリップを読み込む（Firestore優先、フォールバックで静的ファイル） */
+/** パブリックトリップを読み込む（静的ファイル優先、Firestore は補完）
+ * 静的ファイル（data/public-trips.json）が Firestore より多い場合は静的を優先 */
 async function loadPublicTripsFromServer() {
   try {
-    // 1. まずFirestoreから読み込む（ログイン不要、最新データ）
+    let firestoreTrips = [];
+    let staticTrips = [];
+
     if (window.firebaseDb) {
-      console.log('Firestoreからパブリックトリップを読み込み中...');
-      const firestoreTrips = await loadPublicTripsFromFirestore();
-      if (firestoreTrips.length > 0) {
-        publicTrips = firestoreTrips;
-        console.log(`Firestoreから ${firestoreTrips.length}件のパブリックトリップを読み込みました`);
-        await processPublicTripsStamps(publicTrips);
-        await renderPublicTripsPanel();
-        if (photos.length === 0) addPublicTripMarkers();
-        return;
+      try {
+        firestoreTrips = await loadPublicTripsFromFirestore();
+        console.log(`Firestore: ${firestoreTrips.length}件`);
+      } catch (e) {
+        console.warn('Firestore 読み込みエラー:', e);
       }
     }
 
-    // 2. Firestoreが利用できない、またはトリップがない場合は静的ファイルから読み込む
-    console.log('静的ファイルからパブリックトリップを読み込み中...');
-    const staticTrips = await loadPublicTripsFromStaticFile();
-    if (staticTrips.length > 0) {
+    staticTrips = await loadPublicTripsFromStaticFile();
+    console.log(`静的ファイル: ${staticTrips.length}件`);
+
+    // 静的ファイルの方が多い場合は静的を優先（Day1 Shimanami 等が含まれる場合）
+    if (staticTrips.length >= firestoreTrips.length && staticTrips.length > 0) {
       publicTrips = staticTrips;
       console.log(`静的ファイルから ${staticTrips.length}件のパブリックトリップを読み込みました`);
-      await processPublicTripsStamps(publicTrips);
+    } else if (firestoreTrips.length > 0) {
+      publicTrips = firestoreTrips;
+      console.log(`Firestoreから ${firestoreTrips.length}件のパブリックトリップを読み込みました`);
     } else {
-      publicTrips = [];
-      if (!isEditor()) setStatus('公開トリップがありません', true);
+      publicTrips = staticTrips.length > 0 ? staticTrips : [];
+      if (publicTrips.length > 0) {
+        console.log(`静的ファイルから ${publicTrips.length}件を読み込みました`);
+      } else {
+        if (!isEditor()) setStatus('公開トリップがありません', true);
+      }
+    }
+
+    if (publicTrips.length > 0) {
+      await processPublicTripsStamps(publicTrips);
     }
   } catch (err) {
     console.error('パブリックトリップ読み込みエラー:', err);
@@ -4698,25 +4728,33 @@ function getTripGpsDateTimestamp(trip) {
 async function getDisplayablePublicTripsGrouped() {
   const flat = await getDisplayablePublicTrips();
   const config = getPublicTripConfig();
-  if (!config?.sections?.length) {
-    return [{ sectionName: null, sectionUrl: null, trips: flat }];
+  if (config?.sections?.length) {
+    const idToTrip = new Map();
+    for (const t of flat) {
+      const key = t._fromServer ? 'public_' + t.id : t.id;
+      idToTrip.set(key, t);
+      if (t._fromServer) idToTrip.set(t.id, t);
+    }
+    const usedIds = new Set();
+    const groups = [];
+    for (const sec of config.sections) {
+      const trips = (sec.tripIds || []).map(id => idToTrip.get(id) || idToTrip.get('public_' + id) || idToTrip.get(id.replace(/^public_/, ''))).filter(Boolean);
+      trips.forEach(t => usedIds.add(t._fromServer ? 'public_' + t.id : t.id));
+      if (trips.length > 0) groups.push({ sectionName: sec.name || null, sectionUrl: sec.url || null, trips });
+    }
+    const rest = flat.filter(t => !usedIds.has(t._fromServer ? 'public_' + t.id : t.id));
+    if (rest.length) groups.push({ sectionName: 'その他', sectionUrl: null, trips: rest });
+    if (groups.length > 0) return groups;
   }
-  const idToTrip = new Map();
-  for (const t of flat) {
-    const key = t._fromServer ? 'public_' + t.id : t.id;
-    idToTrip.set(key, t);
-    if (t._fromServer) idToTrip.set(t.id, t);
-  }
-  const usedIds = new Set();
+  // 設定なし：トリップ名が「Day」で始まる場合は1トリップ＝1セクションとして表示（Day1 Shimanami 等）
+  const dayTrips = flat.filter(t => (t.name || '').trim().match(/^Day\d/i));
+  const otherTrips = flat.filter(t => !(t.name || '').trim().match(/^Day\d/i));
   const groups = [];
-  for (const sec of config.sections) {
-    const trips = (sec.tripIds || []).map(id => idToTrip.get(id) || idToTrip.get('public_' + id) || idToTrip.get(id.replace(/^public_/, ''))).filter(Boolean);
-    trips.forEach(t => usedIds.add(t._fromServer ? 'public_' + t.id : t.id));
-    if (trips.length > 0) groups.push({ sectionName: sec.name || null, sectionUrl: sec.url || null, trips });
+  for (const t of dayTrips) {
+    groups.push({ sectionName: t.name || 'トリップ', sectionUrl: t.url || null, trips: [t] });
   }
-  const rest = flat.filter(t => !usedIds.has(t._fromServer ? 'public_' + t.id : t.id));
-  if (rest.length) groups.push({ sectionName: 'その他', sectionUrl: null, trips: rest });
-  return groups;
+  if (otherTrips.length > 0) groups.push({ sectionName: 'その他', sectionUrl: null, trips: otherTrips });
+  return groups.length > 0 ? groups : [{ sectionName: null, sectionUrl: null, trips: flat }];
 }
 
 let _publicTripUrls = [];
@@ -4796,8 +4834,6 @@ async function renderPublicTripsPanel() {
   // モバイル：トリップ一覧を表示（セクション選択時）
   const groupsToRender = (isMobile && !_mobileShowSections && _mobileSelectedSection != null)
     ? [groups[_mobileSelectedSection]]
-    : isMobile
-    ? [{ sectionName: null, sectionUrl: null, trips: [...displayTrips].sort((a, b) => getTripGpsDateTimestamp(a) - getTripGpsDateTimestamp(b)) }]
     : groups;
 
   // モバイル：戻るボタンを表示
@@ -6126,6 +6162,49 @@ async function uploadDiffOnlyToFirestore() {
   return uploadIndexedDBToFirestore(false, true);
 }
 
+/** 表示中の公開トリップ（public-trips.json 由来）を Firestore にアップロード */
+async function uploadPublicTripsToFirestore() {
+  if (!window.firebaseDb || !window.firebaseAuth?.currentUser) {
+    setStatus('Google でログインしてください', true);
+    return;
+  }
+  if (!publicTrips || publicTrips.length === 0) {
+    setStatus('アップロードする公開トリップがありません。public-trips.json を配置してから再度お試しください。', true);
+    return;
+  }
+  try {
+    setStatus(`公開トリップ ${publicTrips.length}件を Firestore にアップロード中…`);
+    let ok = 0;
+    let failed = 0;
+    for (const trip of publicTrips) {
+      try {
+        const data = sanitizeForFirestore({ ...trip, userId: window.firebaseAuth.currentUser.uid, public: true });
+        if (!data || typeof data !== 'object') {
+          failed++;
+          continue;
+        }
+        const dataSize = estimateDataSize(data);
+        if (dataSize > 1000000) {
+          console.warn(`スキップ（1MB超過）: ${trip.name || trip.id}`);
+          failed++;
+          continue;
+        }
+        await window.firebaseDb.collection('trips').doc(trip.id).set(data, { merge: true });
+        ok++;
+      } catch (e) {
+        console.error(`アップロード失敗: ${trip.name || trip.id}`, e);
+        failed++;
+      }
+    }
+    await loadPublicTripsFromServer();
+    setStatus(`Firestore 完了: ${ok}件アップロード${failed > 0 ? `、${failed}件スキップ` : ''}`);
+    setTimeout(() => setStatus(''), 3000);
+  } catch (err) {
+    console.error('公開トリップ Firestore アップロードエラー:', err);
+    setStatus(formatFirestoreError(err), true);
+  }
+}
+
 /** IndexedDB → Firestore データ移行（初回は全件、以降は差分のみ）
  * @param {boolean} forceFull - true で強制フル同期（全件再送信）
  * @param {boolean} diffOnly - true で常に差分モード（初回でも全件アップロードしない） */
@@ -6478,9 +6557,8 @@ async function renderMenuMobileTripList() {
     container.appendChild(empty);
     return;
   }
-  const sortedTrips = [...displayTrips].sort((a, b) => getTripGpsDateTimestamp(a) - getTripGpsDateTimestamp(b));
   const urlsToRevoke = [];
-  for (const trip of sortedTrips) {
+  for (const trip of displayTrips) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'menu-mobile-trip-card';
@@ -6684,6 +6762,7 @@ async function savePhotoEdit() {
     }
   } catch (err) {
     console.error('savePhotoEdit error:', err);
+    setStatus(err.message || '保存中にエラーが発生しました', true);
   }
 
   closePhotoEditModal();
@@ -6702,7 +6781,7 @@ async function savePhotoEdit() {
     setTimeout(() => setStatus(''), 2000);
     Promise.all([refreshTripList(), renderPublicTripsPanel(), renderTripListPanel()]).catch(() => {});
   } else {
-    setStatus('保存に失敗しました。トリップを再度読み込んでお試しください。', true);
+    setStatus('保存に失敗しました。トリップ名を入力してから再度お試しください。', true);
   }
 }
 
@@ -7075,6 +7154,8 @@ async function setup() {
   }
 
   document.getElementById('exportPublicBtn').onclick = exportPublicTrips;
+  const uploadPublicToFirestoreBtn = document.getElementById('uploadPublicToFirestoreBtn');
+  if (uploadPublicToFirestoreBtn) uploadPublicToFirestoreBtn.onclick = uploadPublicTripsToFirestore;
   const exportAllTripsBtn = document.getElementById('exportAllTripsBtn');
   if (exportAllTripsBtn) exportAllTripsBtn.onclick = exportAllTripsFromIndexedDB;
   const simpleDownloadBtn = document.getElementById('simpleDownloadBtn');
@@ -7139,21 +7220,20 @@ async function setup() {
           ...existing,
           file: p.file,
           url: p.url,
-          mime: p.mime,
           name: existing.name || p.name,
           lat: existing.lat ?? p.lat,
           lng: existing.lng ?? p.lng,
           placeName: existing.placeName || p.placeName,
-          // data: null を削除して、写真データが保存されるようにする
-          data: undefined,
+          _dbIndex: existing._dbIndex,
         };
-        // メモリ上のphotos配列が更新されたら、マーカーも更新
         addPhotoMarkers();
         renderAllPhotosStrip();
         document.getElementById('photoEditPreview').innerHTML = `<img src="${p.url}" alt="${escapeHtml(photos[_photoEditIndex].name)}" loading="lazy">`;
         document.getElementById('photoEditAddPhotoField').style.display = 'none';
-        _photoEditIsPoint = false; // 写真を追加したのでポイントではなくなる
-        setStatus('写真を追加しました。保存をクリックしてトリップに反映してください。');
+        _photoEditIsPoint = false;
+        setStatus('写真を追加しました。保存中…');
+        // ポイントに写真を追加したら自動でトリップを保存
+        await savePhotoEdit();
       } catch (err) {
         setStatus(err.message || '写真の読み込みに失敗しました', true);
       }
