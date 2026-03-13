@@ -23,6 +23,9 @@
     db.settings({ ignoreUndefinedProperties: true });
     window.firebaseDb = db;
     console.log('Firebase: 初期化完了');
+
+    // Firebase初期化完了イベントを発火
+    window.dispatchEvent(new CustomEvent('firebase-ready'));
   } catch (err) {
     console.error('Firebase: 初期化エラー', err);
   }

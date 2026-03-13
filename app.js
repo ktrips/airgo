@@ -163,14 +163,11 @@ function updateEditorUI() {
   }
   if (photos.length > 0) renderPublicTripsPanel();
   updateSaveButtonState();
-  const uploadToFirestoreBtn = document.getElementById('uploadIndexedDBToFirestoreBtn');
-  const uploadToFirestoreFullBtn = document.getElementById('uploadIndexedDBToFirestoreFullBtn');
-  const uploadDiffOnlyBtn = document.getElementById('uploadDiffOnlyBtn');
-  const showUpload = isEd && window.firebaseDb && window.firebaseAuth?.currentUser && !isWebDeployment();
-  if (uploadToFirestoreBtn) uploadToFirestoreBtn.style.display = showUpload ? '' : 'none';
-  if (uploadToFirestoreFullBtn) uploadToFirestoreFullBtn.style.display = showUpload ? '' : 'none';
-  if (uploadDiffOnlyBtn) uploadDiffOnlyBtn.style.display = showUpload ? '' : 'none';
+  const syncBtn = document.getElementById('syncLocalToFirestoreBtn');
+  const showSync = isEd && window.firebaseDb && window.firebaseAuth?.currentUser && !isWebDeployment();
+  if (syncBtn) syncBtn.style.display = showSync ? '' : 'none';
   updateDbIndicator();
+  updateSyncIndicator();
 }
 
 const STORE_NAME = 'trips';
@@ -205,6 +202,8 @@ let _addPointMapClickHandler = null;
 let _pendingExportBlob = null;
 let _pendingExportCount = 0;
 let _pendingExportFilename = 'public-trips.json.gz';
+let firestoreUnsubscribe = null; // Firestore リアルタイムリスナーの解除関数
+let offlineQueue = []; // オフライン時の保存キュー { action, trip?, id?, timestamp }
 
 const DEFAULT_CENTER = [35.6812, 139.7671]; // 東京
 const DEFAULT_ZOOM = 5;
@@ -298,8 +297,14 @@ async function saveTripToDB(trip) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.put(trip);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      console.log('IndexedDB 保存成功:', trip.id);
+      resolve();
+    };
+    req.onerror = () => {
+      console.error('IndexedDB 保存エラー:', trip.id, req.error);
+      reject(req.error);
+    };
   });
 }
 
@@ -323,6 +328,24 @@ async function loadTripsFromFirestore() {
     return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, _fromFirestore: true }));
   } catch (err) {
     console.warn('Firestore トリップ読み込みエラー:', err);
+    return [];
+  }
+}
+
+/** Firestore からパブリックトリップを取得（ログイン不要） */
+async function loadPublicTripsFromFirestore() {
+  if (!window.firebaseDb) return [];
+  try {
+    console.log('Firestore からパブリックトリップを読み込み中...');
+    const snapshot = await window.firebaseDb.collection('trips')
+      .where('public', '==', true)
+      .orderBy('updatedAt', 'desc')
+      .get();
+    const trips = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, _fromFirestore: true }));
+    console.log(`Firestore からパブリックトリップを ${trips.length}件読み込みました`);
+    return trips;
+  } catch (err) {
+    console.warn('Firestore パブリックトリップ読み込みエラー:', err);
     return [];
   }
 }
@@ -391,8 +414,8 @@ function formatFirestoreError(err) {
     console.error('Firestore エラー詳細:', { code, message: msg, err });
     return 'Firestore エラー(5): scripts/firestore-check.html で診断するか、console.firebase.google.com/project/airgo-trip/firestore で「データベースを作成」→ ネイティブモード・asia-northeast1';
   }
-  if (/payload|size|1\s*MB|limit/i.test(msg)) {
-    return 'トリップのデータが大きすぎます（1MB制限）。写真を減らすか、旅行記・アニメを省略してください。';
+  if (code === 'data-too-large' || /payload|size|1\s*MB|limit/i.test(msg)) {
+    return msg || 'トリップのデータが大きすぎます（1MB制限）。写真を減らすか、旅行記・アニメを省略してください。';
   }
   if (/permission|denied|unauthenticated|insufficient/i.test(msg)) {
     return 'Firestore 権限エラー: 1) Google でログインしているか確認 2) ターミナルで firebase deploy --only firestore:rules を実行';
@@ -400,12 +423,36 @@ function formatFirestoreError(err) {
   return msg || 'Firestore への保存に失敗しました';
 }
 
+/** データのおおよそのバイトサイズを計算 */
+function estimateDataSize(obj) {
+  const str = JSON.stringify(obj);
+  return new Blob([str]).size;
+}
+
 /** Firebase が有効かつログイン中の場合、Firestore にトリップを保存 */
 async function saveTripToFirestore(trip) {
-  if (!window.firebaseDb || !window.firebaseAuth?.currentUser) return;
+  if (!window.firebaseDb || !window.firebaseAuth?.currentUser) {
+    console.log('Firestore 保存スキップ: 未ログインまたはFirebaseが無効');
+    return;
+  }
+
   const data = sanitizeForFirestore({ ...trip, userId: window.firebaseAuth.currentUser.uid });
   if (!data || typeof data !== 'object') throw new Error('Firestore に保存するデータが不正です');
+
+  // データサイズチェック（Firestoreの制限は1MB）
+  const dataSize = estimateDataSize(data);
+  const MAX_FIRESTORE_SIZE = 1000000; // 1MB = 1,000,000 bytes
+
+  if (dataSize > MAX_FIRESTORE_SIZE) {
+    console.warn(`Firestore 保存スキップ: データサイズ ${(dataSize / 1000000).toFixed(2)}MB が制限の1MBを超えています`);
+    const err = new Error('トリップのデータが大きすぎます（1MB制限）。写真を減らすか、旅行記・アニメを省略してください。');
+    err.code = 'data-too-large';
+    throw err;
+  }
+
+  console.log('Firestore に保存中:', trip.id, `(${(dataSize / 1000).toFixed(1)}KB)`);
   await window.firebaseDb.collection('trips').doc(trip.id).set(data, { merge: true });
+  console.log('Firestore 保存完了:', trip.id);
 }
 
 /** Firebase が有効かつログイン中の場合、Firestore からトリップを削除 */
@@ -418,6 +465,297 @@ async function deleteTripFromFirestore(id) {
     }
   } catch (err) {
     console.warn('Firestore 削除エラー:', err);
+  }
+}
+
+/** Firestore の変更を IndexedDB に同期（リアルタイムリスナー用） */
+async function syncFirestoreToLocal(firestoreTrip) {
+  try {
+    const localTrip = await loadTripFromDB(firestoreTrip.id);
+
+    if (!localTrip) {
+      // ローカルに存在しない → Firestore から追加
+      await saveTripToDB(firestoreTrip);
+      console.log('Firestore → Local: 新規追加', firestoreTrip.id);
+      return;
+    }
+
+    const fsUpdated = firestoreTrip.updatedAt || 0;
+    const localUpdated = localTrip.updatedAt || 0;
+
+    if (fsUpdated > localUpdated) {
+      // Firestore の方が新しい → ローカルを上書き
+      await saveTripToDB(firestoreTrip);
+      console.log('Firestore → Local: 更新', firestoreTrip.id);
+    } else if (localUpdated > fsUpdated && navigator.onLine) {
+      // ローカルの方が新しい → Firestore に反映（オフライン中の変更）
+      await saveTripToFirestore(localTrip);
+      console.log('Local → Firestore: オフライン中の変更を反映', localTrip.id);
+    }
+  } catch (err) {
+    console.error('同期エラー:', firestoreTrip.id, err);
+  }
+}
+
+/** Firestore の全トリップをローカルに同期（ログイン時の初期同期） */
+async function syncFirestoreToLocalAll() {
+  if (!window.firebaseDb || !window.firebaseAuth?.currentUser) return;
+
+  try {
+    setStatus('Firestore からデータを取得中...');
+    const fsTrips = await loadTripsFromFirestore();
+
+    let synced = 0;
+    for (const fsTrip of fsTrips) {
+      await syncFirestoreToLocal(fsTrip);
+      synced++;
+    }
+
+    console.log(`Firestore → Local: ${synced}件のトリップを同期しました`);
+    setStatus(`${synced}件のトリップを同期しました`);
+  } catch (err) {
+    console.error('初期同期エラー:', err);
+    setStatus('同期エラーが発生しました', true);
+  }
+}
+
+/** IndexedDB の全トリップを Firestore に同期（手動同期ボタン用） */
+async function syncAllLocalToFirestore() {
+  if (!window.firebaseDb || !window.firebaseAuth?.currentUser) {
+    setStatus('Firestore に同期するにはログインしてください', true);
+    return;
+  }
+
+  try {
+    setStatus('Firestore に同期中...');
+    const localTrips = await loadTripsFromDB();
+    let synced = 0;
+    let skipped = 0;
+
+    for (const trip of localTrips) {
+      try {
+        const fsTrip = await loadTripFromFirestore(trip.id);
+
+        if (!fsTrip || (trip.updatedAt || 0) > (fsTrip.updatedAt || 0)) {
+          await saveTripToFirestore(trip);
+          synced++;
+        } else {
+          skipped++;
+        }
+      } catch (err) {
+        console.error('同期失敗:', trip.id, err);
+      }
+    }
+
+    setStatus(`同期完了: ${synced}件アップロード, ${skipped}件スキップ`);
+    await refreshTripList();
+  } catch (err) {
+    console.error('一括同期エラー:', err);
+    setStatus('同期エラーが発生しました', true);
+  }
+}
+
+/** Firestore の変更をリアルタイムで監視 */
+function subscribeToFirestoreTrips() {
+  if (!window.firebaseDb || !window.firebaseAuth?.currentUser) return;
+
+  // 既存のリスナーを解除
+  if (firestoreUnsubscribe) firestoreUnsubscribe();
+
+  const uid = window.firebaseAuth.currentUser.uid;
+
+  // トリップコレクションの変更をリアルタイム監視
+  firestoreUnsubscribe = window.firebaseDb
+    .collection('trips')
+    .where('userId', '==', uid)
+    .onSnapshot(async (snapshot) => {
+      console.log('Firestore 変更検知:', snapshot.docChanges().length, '件');
+
+      let hasChanges = false;
+      for (const change of snapshot.docChanges()) {
+        const trip = { ...change.doc.data(), id: change.doc.id, _fromFirestore: true };
+
+        if (change.type === 'added' || change.type === 'modified') {
+          // Firestore の変更を IndexedDB に反映
+          await syncFirestoreToLocal(trip);
+          hasChanges = true;
+        } else if (change.type === 'removed') {
+          // Firestore で削除されたら IndexedDB からも削除
+          await deleteTripFromDB(change.doc.id);
+          hasChanges = true;
+        }
+      }
+
+      // UI を更新
+      if (hasChanges) {
+        await refreshTripList();
+
+        // 現在表示中のトリップが変更された場合はリロード
+        if (currentTripId && snapshot.docChanges().some(c => c.doc.id === currentTripId)) {
+          const trip = await getTripById(currentTripId);
+          if (trip) {
+            console.log('表示中のトリップが更新されました:', currentTripId);
+            // 必要に応じて自動リロードまたは通知を表示
+          }
+        }
+      }
+    }, (error) => {
+      console.error('Firestore リスナーエラー:', error);
+      setStatus('リアルタイム同期エラーが発生しました', true);
+    });
+
+  console.log('Firestore リアルタイム同期を開始しました');
+  updateSyncIndicator();
+}
+
+/** リアルタイムリスナーを解除 */
+function unsubscribeFromFirestore() {
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
+    firestoreUnsubscribe = null;
+    console.log('Firestore リスナーを解除しました');
+  }
+  updateSyncIndicator();
+}
+
+/** オフライン時の保存キューを処理 */
+async function processOfflineQueue() {
+  if (offlineQueue.length === 0) return;
+  if (!navigator.onLine || !window.firebaseDb || !window.firebaseAuth?.currentUser) return;
+
+  const queueSize = offlineQueue.length;
+  console.log(`オフラインキューを処理中: ${queueSize}件`);
+  setStatus(`オフライン中の変更を同期中... (${queueSize}件)`);
+
+  let processed = 0;
+  let failed = 0;
+
+  while (offlineQueue.length > 0) {
+    const task = offlineQueue.shift();
+
+    try {
+      if (task.action === 'save') {
+        await saveTripToFirestore(task.trip);
+        processed++;
+      } else if (task.action === 'delete') {
+        await deleteTripFromFirestore(task.id);
+        processed++;
+      }
+    } catch (err) {
+      console.error('キュー処理エラー:', task, err);
+      // エラー時はキューに戻す（次回のオンライン時に再試行）
+      offlineQueue.unshift(task);
+      failed++;
+      break;
+    }
+  }
+
+  if (offlineQueue.length === 0) {
+    console.log(`オフラインキュー処理完了: ${processed}件`);
+    setStatus(`オフライン中の変更を同期しました (${processed}件)`);
+  } else {
+    console.warn(`オフラインキュー処理中断: ${processed}件成功, ${failed}件失敗`);
+    setStatus(`一部の変更を同期できませんでした`, true);
+  }
+
+  await refreshTripList();
+  updateSyncIndicator();
+}
+
+/** オフライン対応の保存関数 */
+async function saveTripWithOfflineSupport(trip) {
+  // 常に IndexedDB に保存
+  await saveTripToDB(trip);
+
+  if (navigator.onLine && window.firebaseDb && window.firebaseAuth?.currentUser) {
+    // オンライン → Firestore に即座に保存
+    try {
+      await saveTripToFirestore(trip);
+      console.log('Firestore 保存成功:', trip.id);
+    } catch (err) {
+      console.error('Firestore 保存エラー:', err);
+
+      // データサイズエラーの場合は、キューに追加せず、エラーを投げる
+      if (err.code === 'data-too-large') {
+        console.warn('データが大きすぎるため、Firestore への保存をスキップします（IndexedDBには保存済み）');
+        throw err; // エラーを上位に伝播
+      }
+
+      // その他のエラーの場合はキューに追加（IndexedDBには保存済み）
+      offlineQueue.push({ action: 'save', trip: { ...trip }, timestamp: Date.now() });
+      updateSyncIndicator();
+      // エラーを投げない（IndexedDBには保存できているので成功扱い）
+      console.warn('Firestore への同期は後ほど行われます');
+    }
+  } else {
+    // オフライン or 未ログイン
+    if (window.firebaseAuth?.currentUser) {
+      // ログイン済みの場合はオフラインキューに追加
+      offlineQueue.push({ action: 'save', trip: { ...trip }, timestamp: Date.now() });
+      console.log('オフラインキューに追加:', trip.id);
+      updateSyncIndicator();
+    } else {
+      // 未ログインの場合はIndexedDBのみ
+      console.log('IndexedDB のみに保存（未ログイン）:', trip.id);
+    }
+  }
+}
+
+/** オフライン対応の削除関数 */
+async function deleteTripWithOfflineSupport(id) {
+  // 常に IndexedDB から削除
+  await deleteTripFromDB(id);
+
+  if (navigator.onLine && window.firebaseDb && window.firebaseAuth?.currentUser) {
+    // オンライン → Firestore から即座に削除
+    try {
+      await deleteTripFromFirestore(id);
+    } catch (err) {
+      console.error('Firestore 削除エラー:', err);
+      // Firestore 削除失敗時はキューに追加
+      offlineQueue.push({ action: 'delete', id, timestamp: Date.now() });
+      updateSyncIndicator();
+    }
+  } else {
+    // オフライン or 未ログイン
+    if (window.firebaseAuth?.currentUser) {
+      // ログイン済みの場合はオフラインキューに追加
+      offlineQueue.push({ action: 'delete', id, timestamp: Date.now() });
+      console.log('オフラインキューに追加 (削除):', id);
+      updateSyncIndicator();
+    } else {
+      // 未ログインの場合はIndexedDBのみから削除済み
+      console.log('IndexedDB から削除（未ログイン）:', id);
+    }
+  }
+}
+
+/** 同期インジケーターを更新 */
+function updateSyncIndicator() {
+  const indicator = document.getElementById('syncIndicator');
+  const queueCount = document.getElementById('offlineQueueCount');
+
+  if (indicator) {
+    if (firestoreUnsubscribe && navigator.onLine) {
+      indicator.textContent = 'リアルタイム同期中';
+      indicator.className = 'sync-active';
+    } else if (!navigator.onLine) {
+      indicator.textContent = 'オフライン';
+      indicator.className = 'sync-offline';
+    } else {
+      indicator.textContent = '同期停止';
+      indicator.className = 'sync-inactive';
+    }
+  }
+
+  if (queueCount) {
+    const count = offlineQueue.length;
+    if (count > 0) {
+      queueCount.style.display = '';
+      queueCount.querySelector('span').textContent = count;
+    } else {
+      queueCount.style.display = 'none';
+    }
   }
 }
 
@@ -792,8 +1130,15 @@ async function savePhotoMetadataToDB(tripId, photoIndex, metadata) {
   if (metadata.name != null) p.name = metadata.name;
   if (metadata.placeName != null) p.placeName = metadata.placeName;
   trip.updatedAt = Date.now();
-  await saveTripToDB(trip);
-  if (isWebDeployment() && useFirestoreAsPrimary()) await saveTripToFirestore(trip);
+
+  // オフライン対応の保存
+  try {
+    await saveTripWithOfflineSupport(trip);
+  } catch (err) {
+    console.error('メタデータ保存エラー:', err);
+    // IndexedDB には保存できているので、Firestore 同期に失敗してもエラーとしない
+  }
+
   return true;
 }
 
@@ -3262,7 +3607,8 @@ async function autoSaveTrip() {
       }
     }
     if (data) {
-      return buildMinimalPhotoForDB({ ...p, data, mime, url: p.photoUrl || p.url });
+      // photoUrl は外部リンクURL、p.url（blob:）はDBに保存しない
+      return buildMinimalPhotoForDB({ ...p, data, mime, url: p.photoUrl });
     }
     if (p.lat != null && p.lng != null) {
       return buildMinimalPointForDB(p);
@@ -3286,8 +3632,7 @@ async function autoSaveTrip() {
     gpxData: gpxData || existing?.gpxData || null,
   };
   try {
-    await saveTripToDB(trip);
-    await saveTripToFirestore(trip);
+    await saveTripWithOfflineSupport(trip);
     photos.forEach((p, i) => { p._dbIndex = i; });
     setStatus('自動保存しました');
     setTimeout(() => setStatus(''), 1500);
@@ -3337,7 +3682,8 @@ async function saveTrip(opts = {}) {
       }
     }
     if (data) {
-      return buildMinimalPhotoForDB({ ...p, data, mime, url: p.photoUrl || p.url });
+      // photoUrl は外部リンクURL、p.url（blob:）はDBに保存しない
+      return buildMinimalPhotoForDB({ ...p, data, mime, url: p.photoUrl });
     }
     if (p.lat != null && p.lng != null) {
       return buildMinimalPointForDB(p);
@@ -3370,13 +3716,32 @@ async function saveTrip(opts = {}) {
   };
 
   try {
-    await saveTripToDB(trip);
-    await saveTripToFirestore(trip);
+    await saveTripWithOfflineSupport(trip);
   } catch (err) {
-    setStatus(formatFirestoreError(err), true);
+    // IndexedDB への保存エラー（深刻）
+    console.error('保存エラー:', err);
+    const errMsg = err.name === 'QuotaExceededError'
+      ? 'ストレージ容量が不足しています。古いトリップを削除してください。'
+      : (formatFirestoreError(err) || err.message || '保存に失敗しました');
+    setStatus(errMsg, true);
     return false;
   }
-  photos.forEach((p, i) => { p._dbIndex = i; });
+  // 保存後、メモリ上の photos を更新（file → data + url に変換）
+  photos.forEach((p, i) => {
+    p._dbIndex = i;
+    const saved = storedPhotos[i];
+    if (saved && p.file) {
+      // file がある場合、保存されたデータで更新
+      p.data = saved.data;
+      p.mime = saved.mime;
+      // 古い blob URL を破棄して、新しい blob URL を生成
+      if (p.url && p.url.startsWith('blob:')) {
+        URL.revokeObjectURL(p.url);
+      }
+      p.url = base64ToUrl(saved.mime, saved.data);
+      delete p.file; // file プロパティを削除（既に data に変換済み）
+    }
+  });
   currentTripId = id;
   isNewTrip = false;
   document.getElementById('tripNameInput').value = name;
@@ -3810,7 +4175,8 @@ function clearCurrentTrip() {
 
 const PUBLIC_TRIPS_MAX_SIZE = 100 * 1024 * 1024; // 100MB 超はスキップ（メモリ不足を防ぐ）
 
-async function loadPublicTripsFromServer() {
+/** 静的ファイルからパブリックトリップを読み込む（フォールバック） */
+async function loadPublicTripsFromStaticFile() {
   const urls = [
     new URL('data/public-trips.json.gz', window.location.href).href,
     new URL('data/public-trips.json', window.location.href).href,
@@ -3824,67 +4190,78 @@ async function loadPublicTripsFromServer() {
       if (res.ok) break;
     }
     if (!res || !res.ok) {
-      publicTrips = [];
-      if (!isEditor()) setStatus('公開トリップの読み込みに失敗しました', true);
-      await renderPublicTripsPanel();
-      return;
+      return [];
     }
     const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
     const isGzip = res.url.endsWith('.gz');
-    const effectiveSize = isGzip ? contentLength * 4 : contentLength; // 圧縮率を考慮した概算
+    const effectiveSize = isGzip ? contentLength * 4 : contentLength;
     if (effectiveSize > PUBLIC_TRIPS_MAX_SIZE) {
-      publicTrips = [];
-      if (!isEditor()) setStatus('public-trips.json が大きすぎます（100MB以下にしてください）', true);
-      await renderPublicTripsPanel();
-      return;
+      console.warn('public-trips.json が大きすぎます');
+      return [];
     }
     let data;
-    try {
-      if (isGzip) {
-        const ds = new DecompressionStream('gzip');
-        const decompressed = res.body.pipeThrough(ds);
-        const reader = decompressed.getReader();
-        const chunks = [];
-        let len = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          len += value.length;
-        }
-        const blob = new Blob(chunks);
-        const text = await new Response(blob).text();
-        data = JSON.parse(text);
-      } else {
-        data = await res.json();
+    if (isGzip) {
+      const ds = new DecompressionStream('gzip');
+      const decompressed = res.body.pipeThrough(ds);
+      const reader = decompressed.getReader();
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
       }
-    } catch (parseErr) {
-      publicTrips = [];
-      if (!isEditor()) setStatus('公開トリップの読み込みに失敗しました（ファイルが大きすぎる可能性があります）', true);
-      await renderPublicTripsPanel();
-      return;
+      const blob = new Blob(chunks);
+      const text = await new Response(blob).text();
+      data = JSON.parse(text);
+    } else {
+      data = await res.json();
     }
-    publicTrips = Array.isArray(data) ? data : (data?.trips || []);
-    const allStamps = getStampPhotos();
-    let stampsMerged = false;
-    for (const trip of publicTrips) {
-      if (trip?.stampPhotos && typeof trip.stampPhotos === 'object' && trip.id) {
-        const prefix = 'public_' + trip.id + '_';
-        for (const [photoIndex, sp] of Object.entries(trip.stampPhotos)) {
-          if (sp?.data) {
-            allStamps[prefix + photoIndex] = { data: sp.data, mime: sp.mime || 'image/jpeg' };
-            stampsMerged = true;
-          }
-        }
-      }
-    }
-    if (stampsMerged) localStorage.setItem(STAMP_PHOTOS_KEY, JSON.stringify(allStamps));
+    return Array.isArray(data) ? data : (data?.trips || []);
   } catch (err) {
+    console.warn('静的ファイルからの読み込みエラー:', err);
+    return [];
+  }
+}
+
+/** パブリックトリップを読み込む（Firestore優先、フォールバックで静的ファイル） */
+async function loadPublicTripsFromServer() {
+  try {
+    // 静的ファイルから読み込む（一時的にFirestoreをスキップ）
+    console.log('静的ファイルからパブリックトリップを読み込み中...');
+    const staticTrips = await loadPublicTripsFromStaticFile();
+    if (staticTrips.length > 0) {
+      publicTrips = staticTrips;
+      console.log(`静的ファイルから ${staticTrips.length}件のパブリックトリップを読み込みました`);
+      await processPublicTripsStamps(publicTrips);
+    } else {
+      publicTrips = [];
+      if (!isEditor()) setStatus('公開トリップがありません', true);
+    }
+  } catch (err) {
+    console.error('パブリックトリップ読み込みエラー:', err);
     publicTrips = [];
     if (!isEditor()) setStatus('公開トリップの読み込みに失敗しました', true);
   }
   await renderPublicTripsPanel();
   if (photos.length === 0) addPublicTripMarkers();
+}
+
+/** パブリックトリップのスタンプ写真を処理 */
+async function processPublicTripsStamps(trips) {
+  const allStamps = getStampPhotos();
+  let stampsMerged = false;
+  for (const trip of trips) {
+    if (trip?.stampPhotos && typeof trip.stampPhotos === 'object' && trip.id) {
+      const prefix = 'public_' + trip.id + '_';
+      for (const [photoIndex, sp] of Object.entries(trip.stampPhotos)) {
+        if (sp?.data) {
+          allStamps[prefix + photoIndex] = { data: sp.data, mime: sp.mime || 'image/jpeg' };
+          stampsMerged = true;
+        }
+      }
+    }
+  }
+  if (stampsMerged) localStorage.setItem(STAMP_PHOTOS_KEY, JSON.stringify(allStamps));
 }
 
 function getPublicTripConfig() {
@@ -5796,8 +6173,7 @@ async function importTripsFromFile() {
           createdAt: trip.createdAt || Date.now(),
           updatedAt: Date.now(),
         };
-        await saveTripToDB(toSave);
-        await saveTripToFirestore(toSave);
+        await saveTripWithOfflineSupport(toSave);
       }
       await refreshTripList();
       setStatus(`トリップ ${trips.length}件を復元しました`);
@@ -5878,8 +6254,7 @@ async function deleteTrip() {
   if (!confirm('このトリップを削除しますか？')) return;
 
   try {
-    await deleteTripFromDB(id);
-    await deleteTripFromFirestore(id);
+    await deleteTripWithOfflineSupport(id);
     await cleanupTripRelatedData(id);
     if (currentTripId === id) clearCurrentTrip();
     document.getElementById('tripSelect').value = '';
@@ -6096,7 +6471,8 @@ function openPhotoEditModal(photoIndex) {
     URL.revokeObjectURL(_photoEditPreviewUrl);
     _photoEditPreviewUrl = null;
   }
-  _photoEditTripId = currentTripId;
+  // 新規トリップの場合は特別なIDを設定
+  _photoEditTripId = currentTripId || (isNewTrip ? '__new_trip__' : null);
   _photoEditIndex = photoIndex;
   const photo = photos[photoIndex];
   if (!photo) return;
@@ -6182,27 +6558,35 @@ async function savePhotoEdit() {
   const desc = document.getElementById('photoEditDesc').value.trim() || null;
   const url = document.getElementById('photoEditUrl').value.trim() || null;
 
-  if (!_photoEditTripId) {
+  // 新規トリップまたは既存トリップが必要
+  const isNewTripEdit = _photoEditTripId === '__new_trip__';
+  if (!_photoEditTripId && !isNewTrip) {
     closePhotoEditModal();
     setStatus('保存できません（トリップが読み込まれていません。メニューからトリップを選択して「読み込み」してください）', true);
     return;
   }
 
   // 公開トリップは保存不可
-  if (_photoEditTripId.startsWith('public_')) {
+  if (_photoEditTripId?.startsWith('public_')) {
     closePhotoEditModal();
     setStatus('公開トリップは編集・保存できません', true);
     return;
   }
 
+  // ポイントの状態を再確認（写真が追加されている可能性があるため）
+  const p = photos[_photoEditIndex];
+  if (p) {
+    _photoEditIsPoint = !hasPhotoData(p);
+  }
+
   // メモリ上の photos を更新（表示中のトリップの場合）
-  if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
-    const p = photos[_photoEditIndex];
-    p.landmarkNo = landmarkNo;
-    p.landmarkName = landmarkName;
-    p.description = desc;
-    p.photoUrl = url;
-    if (_photoEditIsPoint && desc) p.name = p.placeName = desc;
+  if ((currentTripId === _photoEditTripId || isNewTripEdit) && photos[_photoEditIndex]) {
+    const photo = photos[_photoEditIndex];
+    photo.landmarkNo = landmarkNo;
+    photo.landmarkName = landmarkName;
+    photo.description = desc;
+    photo.photoUrl = url;
+    if (_photoEditIsPoint && desc) photo.name = photo.placeName = desc;
   }
 
   const metadata = { landmarkNo, landmarkName, description: desc, url };
@@ -6211,12 +6595,14 @@ async function savePhotoEdit() {
     metadata.placeName = desc;
   }
   let saved = false;
-  const p = photos[_photoEditIndex];
   const hasNewPhoto = p && (p.file || p.data);
   try {
-    if (currentTripId === _photoEditTripId && hasNewPhoto) {
+    // 新規トリップ、またはポイントに写真を追加した場合は、トリップ全体を保存
+    if (isNewTripEdit || (currentTripId === _photoEditTripId && hasNewPhoto)) {
+      console.log('トリップ全体を保存します (新規トリップ or ポイントに写真追加)');
       saved = await saveTrip({ skipOpenTripList: true });
     } else {
+      // メタデータのみの更新
       const dbIndex = (p?._dbIndex != null) ? p._dbIndex : _photoEditIndex;
       saved = await savePhotoMetadataToDB(_photoEditTripId, dbIndex, metadata);
     }
@@ -6228,7 +6614,8 @@ async function savePhotoEdit() {
 
   if (saved) {
     closeTripListPanel();
-    if (currentTripId === _photoEditTripId && photos[_photoEditIndex]) {
+    // 新規トリップまたは表示中のトリップの場合、表示を更新
+    if ((isNewTripEdit || currentTripId === _photoEditTripId) && photos[_photoEditIndex]) {
       addPhotoMarkers();
       const strip = document.getElementById('allPhotosStrip');
       if (strip?.parentElement?.classList.contains('visible')) renderAllPhotosStrip();
@@ -6399,9 +6786,25 @@ async function setup() {
   if (window.firebaseAuth) {
     window.firebaseAuth.onAuthStateChanged(async user => {
       if (user) {
+        console.log('Firebase 認証: ログイン検知', user.uid);
         updateEditorUI();
+
+        // Firestore からローカルに初期同期
+        await syncFirestoreToLocalAll();
+
+        // オフラインキューを処理
+        await processOfflineQueue();
+
+        // リアルタイム同期を開始
+        subscribeToFirestoreTrips();
+
         await refreshTripList();
       } else {
+        console.log('Firebase 認証: ログアウト検知');
+
+        // リアルタイム同期を停止
+        unsubscribeFromFirestore();
+
         updateDbIndicator();
       }
     });
@@ -6409,11 +6812,25 @@ async function setup() {
 
   // オンライン/オフライン時に DB インジケーターを更新し、オンライン復帰時は Firestore から再取得
   window.addEventListener('online', async () => {
+    console.log('オンライン復帰');
     updateDbIndicator();
+
+    // オフラインキューを処理
+    await processOfflineQueue();
+
+    // リアルタイム同期を再開
+    if (window.firebaseAuth?.currentUser) {
+      subscribeToFirestoreTrips();
+    }
+
     if (useFirestoreAsPrimary()) await refreshTripList();
   });
   window.addEventListener('offline', () => {
+    console.log('オフライン');
     updateDbIndicator();
+
+    // リアルタイム同期を停止
+    unsubscribeFromFirestore();
   });
 
   document.getElementById('helpBtn').onclick = () => {
@@ -6490,6 +6907,14 @@ async function setup() {
       setStatus(err.message || 'GPXの読み込みに失敗しました', true);
     }
     gpxInput.value = '';
+  };
+
+  const addPointBtn = document.getElementById('addPointBtn');
+  if (addPointBtn) {
+    addPointBtn.onclick = () => {
+      closeMenu();
+      startAddPointMode();
+    };
   };
 
   const togglePlayStop = () => { if (isPlaying) stopPlay(); else startPlay(); };
@@ -6579,12 +7004,6 @@ async function setup() {
   const simpleDownloadBtn = document.getElementById('simpleDownloadBtn');
   if (simpleDownloadBtn) simpleDownloadBtn.onclick = simpleDownload;
   document.getElementById('tripImportBtn').onclick = importTripsFromFile;
-  const uploadToFirestoreBtn = document.getElementById('uploadIndexedDBToFirestoreBtn');
-  if (uploadToFirestoreBtn) uploadToFirestoreBtn.onclick = () => uploadIndexedDBToFirestore(false);
-  const uploadDiffOnlyBtn = document.getElementById('uploadDiffOnlyBtn');
-  if (uploadDiffOnlyBtn) uploadDiffOnlyBtn.onclick = () => uploadDiffOnlyToFirestore();
-  const uploadToFirestoreFullBtn = document.getElementById('uploadIndexedDBToFirestoreFullBtn');
-  if (uploadToFirestoreFullBtn) uploadToFirestoreFullBtn.onclick = () => uploadIndexedDBToFirestore(true);
   const cleanupStorageBtn = document.getElementById('cleanupStorageBtn');
   if (cleanupStorageBtn) {
     cleanupStorageBtn.onclick = async () => {
@@ -6639,16 +7058,25 @@ async function setup() {
       try {
         const p = await loadPhotoWithExif(file);
         const existing = photos[_photoEditIndex];
+        // ポイントの全プロパティを保持しながら、写真データを追加
         photos[_photoEditIndex] = {
           ...existing,
           file: p.file,
           url: p.url,
+          mime: p.mime,
           name: existing.name || p.name,
           lat: existing.lat ?? p.lat,
           lng: existing.lng ?? p.lng,
+          placeName: existing.placeName || p.placeName,
+          // data: null を削除して、写真データが保存されるようにする
+          data: undefined,
         };
+        // メモリ上のphotos配列が更新されたら、マーカーも更新
+        addPhotoMarkers();
+        renderAllPhotosStrip();
         document.getElementById('photoEditPreview').innerHTML = `<img src="${p.url}" alt="${escapeHtml(photos[_photoEditIndex].name)}" loading="lazy">`;
         document.getElementById('photoEditAddPhotoField').style.display = 'none';
+        _photoEditIsPoint = false; // 写真を追加したのでポイントではなくなる
         setStatus('写真を追加しました。保存をクリックしてトリップに反映してください。');
       } catch (err) {
         setStatus(err.message || '写真の読み込みに失敗しました', true);
@@ -6872,6 +7300,11 @@ async function setup() {
   await refreshTripList();
   updatePhotoNav();
 
+  // Firebase初期化完了後にパブリックトリップを再読み込み
+  window.addEventListener('firebase-ready', async () => {
+    console.log('Firebase初期化完了、パブリックトリップを再読み込みします');
+    await loadPublicTripsFromServer();
+  });
 }
 
 setup();

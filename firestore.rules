@@ -2,8 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /trips/{tripId} {
+      // 作成：ログイン必須
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+
+      // 読み込み：自分のトリップ または パブリックトリップ（ログイン不要）
+      allow read: if (request.auth != null && resource.data.userId == request.auth.uid)
+                  || resource.data.public == true;
+
+      // 更新・削除：自分のトリップのみ
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
   }
 }

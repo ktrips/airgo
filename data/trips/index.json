@@ -1,0 +1,156 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-03-13T01:06:54.184Z",
+  "totalTrips": 7,
+  "trips": [
+    {
+      "id": "trip_1772932314630",
+      "name": "Day3 Kagawa",
+      "description": "四国お遍路の旅：香川のお寺をロードバイクで巡る",
+      "url": "https://ktrips.net/trips/japan/ohenro/ohenro-kagawa2/",
+      "public": true,
+      "photoCount": 25,
+      "updatedAt": 1773209309811,
+      "thumbnail": {
+        "url": "blob:http://127.0.0.1:8080/6193a79c-abe7-4961-a35a-d53ed39a84f0",
+        "lat": 34.30280277777778,
+        "lng": 133.94453333333334,
+        "placeName": "高松市"
+      },
+      "hasGpx": true,
+      "color": "#8b5cf6",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    },
+    {
+      "id": "trip_1772955818543",
+      "name": "Day3 Sanuki",
+      "description": "香川・善通寺から自転車で登ったり降ったりのお遍路の旅",
+      "url": "https://ktrips.net/trips/japan/ohenro/ohenro-kagawa2/",
+      "public": true,
+      "photoCount": 15,
+      "updatedAt": 1773208152732,
+      "thumbnail": {
+        "url": "blob:http://127.0.0.1:8080/f7e89231-a57f-4d2b-81b2-2ab0e8cca52b",
+        "lat": 34.22476944444445,
+        "lng": 133.77471944444446,
+        "placeName": "善通寺市"
+      },
+      "hasGpx": true,
+      "color": "#22c55e",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    },
+    {
+      "id": "trip_1772876862398",
+      "name": "Day2 Imabari",
+      "description": "四国お遍路自転車の旅、愛媛の今治から観音寺まで",
+      "url": "https://ktrips.net/trips/japan/ohenro/ohenro-ehime/",
+      "public": true,
+      "photoCount": 14,
+      "updatedAt": 1773208041364,
+      "thumbnail": {
+        "url": "blob:http://127.0.0.1:8080/a6609ddb-2af8-4cfd-954b-53f4ddb2ded6",
+        "lat": 34.013102777777775,
+        "lng": 132.9775388888889,
+        "placeName": "今治市"
+      },
+      "hasGpx": true,
+      "color": "#f97316",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    },
+    {
+      "id": "trip_1772961022440",
+      "name": "Day5 Tokushima",
+      "description": "四国お遍路：徳島出発の旅",
+      "url": "",
+      "public": true,
+      "photoCount": 2,
+      "updatedAt": 1773207926636,
+      "thumbnail": {
+        "url": "blob:http://127.0.0.1:8080/92a72321-219d-49c4-8587-a46943110c43",
+        "lat": 34.34343611111111,
+        "lng": 133.9616861111111,
+        "placeName": "高松市"
+      },
+      "hasGpx": false,
+      "color": "#06b6d4",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    },
+    {
+      "id": "trip_1772961130078",
+      "name": "Day4 Awaji",
+      "description": "淡路島と徳島お遍路旅：神戸から淡路島に渡って、ロードバイクで四国に渡る",
+      "url": "",
+      "public": true,
+      "photoCount": 4,
+      "updatedAt": 1773207895967,
+      "thumbnail": {
+        "url": "blob:http://127.0.0.1:8080/f0fb65c0-e2a9-4f75-ba35-c388b31b789c",
+        "lat": 34.69243922174436,
+        "lng": 135.1956939697266,
+        "placeName": "神戸駅をスタート"
+      },
+      "hasGpx": false,
+      "color": "#3b82f6",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    },
+    {
+      "id": "trip_1772288634533",
+      "name": "Day2 Ehime",
+      "description": "2日目午後の愛媛、自転車で観音寺から山を抜け善通寺まで到着",
+      "url": "https://ktrips.net/trips/japan/ohenro/ohenro-ehime2/",
+      "public": true,
+      "photoCount": 36,
+      "updatedAt": 1773207875667,
+      "thumbnail": {
+        "url": "blob:http://127.0.0.1:8080/f1f52b61-3716-4881-b3de-858763ee5a77",
+        "lat": 34.12459444444445,
+        "lng": 133.65553333333335,
+        "placeName": "観音寺市"
+      },
+      "hasGpx": true,
+      "color": "#84cc16",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    },
+    {
+      "id": "trip_1772874734231",
+      "name": "Day1 Shimanami",
+      "description": "ロードバイクで広島・尾道からしまなみ海道を駆け抜け、愛媛・今治へのツーリング",
+      "url": "https://ktrips.net/trips/japan/ohenro/shimanami/",
+      "public": true,
+      "photoCount": 31,
+      "updatedAt": 1773059072081,
+      "thumbnail": null,
+      "hasGpx": true,
+      "color": "#e1306c",
+      "stats": {
+        "distance": 0,
+        "duration": 0,
+        "dateRange": null
+      }
+    }
+  ]
+}

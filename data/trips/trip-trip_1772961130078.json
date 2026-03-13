@@ -1,0 +1,50 @@
+{
+  "id": "trip_1772961130078",
+  "name": "Day4 Awaji",
+  "description": "淡路島と徳島お遍路旅：神戸から淡路島に渡って、ロードバイクで四国に渡る",
+  "url": null,
+  "public": true,
+  "color": "#3b82f6",
+  "createdAt": 1772961130078,
+  "updatedAt": 1773207895967,
+  "photos": [
+    {
+      "url": "blob:http://127.0.0.1:8080/f0fb65c0-e2a9-4f75-ba35-c388b31b789c",
+      "lat": 34.69243922174436,
+      "lng": 135.1956939697266,
+      "name": "神戸駅をスタート",
+      "placeName": "神戸駅をスタート",
+      "description": "神戸駅をスタート！",
+      "landmarkNo": "0",
+      "landmarkName": "神戸"
+    },
+    {
+      "lat": 34.6501592362827,
+      "lng": 134.99759674072268,
+      "name": "明石",
+      "placeName": "明石",
+      "description": "明石",
+      "landmarkNo": "1",
+      "landmarkName": "明石"
+    },
+    {
+      "lat": 34.59748134323737,
+      "lng": 135.01081466674808,
+      "name": "明石海峡大橋",
+      "placeName": "明石海峡大橋",
+      "description": "明石海峡大橋",
+      "landmarkNo": "3",
+      "landmarkName": "明石海峡大橋"
+    },
+    {
+      "lat": 34.4465259332228,
+      "lng": 134.90661621093753,
+      "name": "淡路",
+      "placeName": "淡路",
+      "description": "淡路",
+      "landmarkNo": "4",
+      "landmarkName": "淡路"
+    }
+  ],
+  "gpxData": null
+}

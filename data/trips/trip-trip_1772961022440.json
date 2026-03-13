@@ -1,0 +1,29 @@
+{
+  "id": "trip_1772961022440",
+  "name": "Day5 Tokushima",
+  "description": "四国お遍路：徳島出発の旅",
+  "url": null,
+  "public": true,
+  "color": "#06b6d4",
+  "createdAt": 1772961022440,
+  "updatedAt": 1773207926636,
+  "photos": [
+    {
+      "url": "blob:http://127.0.0.1:8080/92a72321-219d-49c4-8587-a46943110c43",
+      "lat": 34.34343611111111,
+      "lng": 133.9616861111111,
+      "name": "IMG_7885.JPEG",
+      "placeName": "高松市"
+    },
+    {
+      "lat": 34.071959593122514,
+      "lng": 134.555139541626,
+      "name": "第一番札所　お遍路寺",
+      "placeName": "第一番札所　お遍路寺",
+      "description": "第一番札所　お遍路寺",
+      "landmarkNo": "1",
+      "landmarkName": "第一遍路寺"
+    }
+  ],
+  "gpxData": null
+}

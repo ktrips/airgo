@@ -49,6 +49,10 @@
       <div class="menu-body">
         <p class="menu-app-desc">AirGo — 地図と写真でエア旅行した気分になるアプリ</p>
         <div class="db-indicator" id="dbIndicator" title="現在のデータソース">—</div>
+        <div class="sync-status" id="syncStatus">
+          <span id="syncIndicator" class="sync-inactive">同期停止</span>
+          <span id="offlineQueueCount" style="display:none">未送信: <span>0</span>件</span>
+        </div>
         <section class="menu-section menu-auth-section">
           <button type="button" class="btn btn-primary menu-full" id="authBtn">ログイン</button>
         </section>
@@ -122,6 +126,7 @@
             <span class="menu-upload-icon">📍</span>
             <span>GPXファイル</span>
           </div>
+          <button type="button" class="btn btn-secondary menu-full" id="addPointBtn" title="地図上をクリックしてポイントを追加">📍 ポイントを追加</button>
         </section>
         <section class="menu-section editor-only" id="aiSettingsSection">
           <h3>設定</h3>
@@ -150,11 +155,7 @@
           <div class="menu-row editor-only">
             <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
-            <button type="button" class="btn btn-primary menu-full" id="uploadIndexedDBToFirestoreBtn" title="IndexedDB のトリップを Firestore に同期（初回は全件、以降は差分のみ）" style="display:none">☁️ IndexedDB → Firestore に同期</button>
-          </div>
-          <div class="menu-row editor-only">
-            <button type="button" class="btn btn-secondary btn-sm" id="uploadDiffOnlyBtn" title="変更したトリップのみ Firestore に送信（削除同期含む）" style="display:none">差分のみ送信</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="uploadIndexedDBToFirestoreFullBtn" title="全件を再アップロード（強制フル同期）" style="display:none">全件再送信</button>
+            <button type="button" class="btn btn-primary menu-full" id="syncLocalToFirestoreBtn" title="IndexedDB のトリップを Firestore に手動同期" style="display:none" onclick="syncAllLocalToFirestore()">☁️ Firestore に手動同期</button>
           </div>
           <div class="menu-row editor-only">
             <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
