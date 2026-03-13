@@ -3879,8 +3879,7 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
   else currentTripId = tripId;
   isNewTrip = false;
   _showTripListInPanel = false;
-  _mobileShowSections = true;
-  _mobileSelectedSection = null;
+  // モバイルのセクション選択状態は保持（戻る時に元のトリップ一覧に戻るため）
   _currentViewingTripId = tripId;
 
   photos.forEach(p => {
@@ -4792,7 +4791,7 @@ async function renderPublicTripsPanel() {
     const backBtn = document.createElement('button');
     backBtn.type = 'button';
     backBtn.className = 'mobile-back-to-sections';
-    backBtn.textContent = '← 戻る';
+    backBtn.innerHTML = '<span style="font-size:1.2em">‹</span> 戻る';
     backBtn.onclick = () => {
       _mobileShowSections = true;
       _mobileSelectedSection = null;
@@ -4963,14 +4962,14 @@ async function renderTripMenu() {
   const prevBtn = document.createElement('button');
   prevBtn.type = 'button';
   prevBtn.className = 'trip-menu-nav-arrow';
-  prevBtn.innerHTML = '<span class="trip-menu-nav-arrow-desktop">◀️</span><span class="trip-menu-nav-arrow-mobile">&lt;&lt;</span>';
+  prevBtn.innerHTML = '<span class="trip-menu-nav-arrow-desktop">◀️</span><span class="trip-menu-nav-arrow-mobile">‹</span>';
   prevBtn.title = '前のトリップ';
   prevBtn.disabled = !prevTrip;
   prevBtn.onclick = () => { if (prevTrip) loadTripAndShowPhoto(normId(prevTrip), 0); };
   const nextBtn = document.createElement('button');
   nextBtn.type = 'button';
   nextBtn.className = 'trip-menu-nav-arrow';
-  nextBtn.innerHTML = '<span class="trip-menu-nav-arrow-desktop">▶️</span><span class="trip-menu-nav-arrow-mobile">&gt;&gt;</span>';
+  nextBtn.innerHTML = '<span class="trip-menu-nav-arrow-desktop">▶️</span><span class="trip-menu-nav-arrow-mobile">›</span>';
   nextBtn.title = '次のトリップ';
   nextBtn.disabled = !nextTrip;
   nextBtn.onclick = () => { if (nextTrip) loadTripAndShowPhoto(normId(nextTrip), 0); };
@@ -4984,19 +4983,6 @@ async function renderTripMenu() {
   navRow.appendChild(titleWrap);
   navRow.appendChild(nextBtn);
   headerSection.appendChild(navRow);
-
-  // モバイル：トリップ一覧に戻るボタン
-  if (isMobileView()) {
-    const backBtn = document.createElement('button');
-    backBtn.type = 'button';
-    backBtn.className = 'mobile-back-to-trip-list';
-    backBtn.textContent = '← 戻る';
-    backBtn.onclick = () => {
-      _showTripListInPanel = true;
-      renderPublicTripsPanel();
-    };
-    headerSection.appendChild(backBtn);
-  }
 
   const durationStr = formatDuration(gpxSummary?.durationHours) || '';
   const dateWithDuration = [dateStr, durationStr].filter(Boolean).join(' ');
@@ -5150,7 +5136,8 @@ async function renderTripMenu() {
   }
   getAnimeAllForTripDisplay(rawTripId, currentTrip?.animeList).then(async (allItems) => {
     const wrap = document.getElementById('tripMenuAnimeAll');
-    if (allItems.length > 0 && summaryBtns) {
+    // モバイルではアニメボタンを表示しない
+    if (allItems.length > 0 && summaryBtns && !isMobileView()) {
       const existingAnimeBtn = summaryBtns.querySelector('.trip-menu-anime-summary-btn');
       if (!existingAnimeBtn) {
         const animeSummaryBtn = document.createElement('button');
@@ -5170,7 +5157,8 @@ async function renderTripMenu() {
         summaryBtns.insertBefore(animeSummaryBtn, insertBefore);
       }
     }
-    if (!wrap || allItems.length === 0) return;
+    // モバイルではアニメ一覧を表示しない
+    if (!wrap || allItems.length === 0 || isMobileView()) return;
     wrap.innerHTML = '';
     const list = document.createElement('div');
     list.className = 'trip-menu-anime-all-list';
@@ -5360,7 +5348,7 @@ async function renderTripMenu() {
   const prevBtnBottom = document.createElement('button');
   prevBtnBottom.type = 'button';
   prevBtnBottom.className = 'trip-menu-nav-arrow';
-  prevBtnBottom.innerHTML = '<span class="trip-menu-nav-arrow-desktop">◀️</span><span class="trip-menu-nav-arrow-mobile">&lt;&lt;</span>';
+  prevBtnBottom.innerHTML = '<span class="trip-menu-nav-arrow-desktop">◀️</span><span class="trip-menu-nav-arrow-mobile">‹</span>';
   prevBtnBottom.title = prevTrip ? `前のトリップ: ${escapeHtml(prevTrip.name || '')}` : '前のトリップ';
   prevBtnBottom.disabled = !prevTrip;
   prevBtnBottom.onclick = () => { if (prevTrip) loadTripAndShowPhoto(normId(prevTrip), 0); };
@@ -5373,7 +5361,7 @@ async function renderTripMenu() {
   const nextBtnBottom = document.createElement('button');
   nextBtnBottom.type = 'button';
   nextBtnBottom.className = 'trip-menu-nav-arrow';
-  nextBtnBottom.innerHTML = '<span class="trip-menu-nav-arrow-desktop">▶️</span><span class="trip-menu-nav-arrow-mobile">&gt;&gt;</span>';
+  nextBtnBottom.innerHTML = '<span class="trip-menu-nav-arrow-desktop">▶️</span><span class="trip-menu-nav-arrow-mobile">›</span>';
   nextBtnBottom.title = nextTrip ? `次のトリップ: ${escapeHtml(nextTrip.name || '')}` : '次のトリップ';
   nextBtnBottom.disabled = !nextTrip;
   nextBtnBottom.onclick = () => { if (nextTrip) loadTripAndShowPhoto(normId(nextTrip), 0); };
@@ -5381,6 +5369,21 @@ async function renderTripMenu() {
   navRowBottom.appendChild(titleWrapBottom);
   navRowBottom.appendChild(nextBtnBottom);
   content.appendChild(navRowBottom);
+
+  // トリップ一覧に戻るボタン（一番下）
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = isMobileView() ? 'mobile-back-to-trip-list' : 'desktop-back-to-trip-list';
+  if (isMobileView()) {
+    backBtn.innerHTML = '<span style="font-size:1.2em">‹</span> 戻る';
+  } else {
+    backBtn.textContent = 'トリップ一覧に戻る';
+  }
+  backBtn.onclick = () => {
+    _showTripListInPanel = true;
+    renderPublicTripsPanel();
+  };
+  content.appendChild(backBtn);
 
   if (_tripMenuMap) {
     _tripMenuMap.remove();
