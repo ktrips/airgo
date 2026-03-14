@@ -96,13 +96,27 @@ body {
   margin: 0 auto;
   border-radius: 1px;
 }
-.header-title {
+.header-brand {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.header-mobile-slogan {
+  display: none;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+  font-weight: 500;
+}
+.header-title {
   font-size: 1.85rem;
   font-weight: 700;
   letter-spacing: -0.04em;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+  /* Instagram風虹色グラデーション */
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1319,15 +1333,14 @@ select {
   min-height: 0;
 }
 .map-container {
+  order: 1;
   flex: 1;
   position: relative;
   min-width: 0;
   background: #e8e8e8;
   min-height: 300px;
 }
-body.parent-trip-view .map-container {
-  display: none;
-}
+/* 親トリップ時も地図を表示（子トリップのGPSを表示するため） */
 .map-search-box {
   position: absolute;
   top: max(0.5rem, env(safe-area-inset-top));
@@ -1396,7 +1409,7 @@ body.parent-trip-view .map-container {
   font-size: 1.02rem;
   font-weight: 800;
   color: #fff;
-  background: linear-gradient(135deg, rgba(131, 58, 180, 0.96) 0%, rgba(253, 29, 29, 0.96) 50%, rgba(252, 176, 69, 0.96) 100%);
+  background: var(--trip-accent, var(--accent));
   border-radius: var(--radius);
   box-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 255, 255, 0.5);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
@@ -1438,46 +1451,46 @@ body.parent-trip-view .map-container {
   font-family: var(--font);
 }
 
-/* ランドマーク番号マーカー（目立つ表示） */
+/* ランドマーク番号マーカー（目立つ表示・20%縮小） */
 .landmark-marker-num {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 40px !important;
-  height: 40px !important;
+  width: 32px !important;
+  height: 32px !important;
   border-radius: 50%;
   background: var(--accent);
   color: #fff !important;
-  font-size: 18px !important;
+  font-size: 14px !important;
   font-weight: 800 !important;
   line-height: 1 !important;
   text-align: center;
-  border: 3px solid #fff;
+  border: 2px solid #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(225, 48, 108, 0.5);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .landmark-marker-plain {
   display: inline-block !important;
-  width: 24px !important;
-  height: 24px !important;
+  width: 19px !important;
+  height: 19px !important;
   border-radius: 50%;
   background: #fff;
   border: 2px solid #999;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-/* モバイル：ポイントマーカーを小さく */
+/* モバイル：ポイントマーカーを小さく（さらに20%縮小） */
 @media (max-width: 768px) {
   .photo-marker-mobile .landmark-marker-num {
-    width: 28px !important;
-    height: 28px !important;
-    font-size: 14px !important;
-    border-width: 2px !important;
+    width: 18px !important;
+    height: 18px !important;
+    font-size: 9px !important;
+    border-width: 1.5px !important;
   }
   .photo-marker-mobile .landmark-marker-plain {
-    width: 16px !important;
-    height: 16px !important;
-    border-width: 2px !important;
+    width: 10px !important;
+    height: 10px !important;
+    border-width: 1.5px !important;
   }
 }
 
@@ -1815,6 +1828,30 @@ body.parent-trip-view .map-container {
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
+
+/* ブログ・旅行記表示モーダル（モバイル用） */
+.webview-modal {
+  max-width: 96vw;
+  max-height: 90vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.webview-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.webview-modal-body iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  border: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
 .character-preview-remove:hover {
   background: var(--accent);
 }
@@ -1855,6 +1892,7 @@ body.parent-trip-view .map-container {
 
 /* === 公開トリップパネル === */
 .public-trips-panel {
+  order: 2;
   width: 422px;
   flex-shrink: 0;
   background: var(--bg-card);
@@ -1972,13 +2010,12 @@ body.parent-trip-view .map-container {
 .trip-menu-content {
   flex: 1;
   overflow-y: auto;
-  padding: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--trip-accent, var(--accent));
-  border-radius: var(--radius);
+}
+.trip-menu-loading {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 .trip-menu-nav-row {
   display: flex;
@@ -2085,7 +2122,8 @@ body.parent-trip-view .map-container {
 }
 .trip-menu-summary-section .trip-menu-section-title,
 .trip-menu-map-section .trip-menu-section-title,
-.trip-menu-stamps .trip-menu-section-title {
+.trip-menu-stamps .trip-menu-section-title,
+.trip-menu-children-section .trip-menu-section-title {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -2205,7 +2243,7 @@ body.parent-trip-view .map-container {
   align-items: center;
   gap: 0.5rem;
 }
-/* 旅行記生成・キャラ・アニメ生成ボタンの大きさを統一 */
+/* 旅行記生成・キャラ・アニメ生成ボタンの大きさを統一（トリップカラー適用） */
 .trip-menu-editor-row .btn {
   height: 2.25rem;
   min-height: 2.25rem;
@@ -2214,6 +2252,22 @@ body.parent-trip-view .map-container {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+.trip-menu-editor-row .btn-primary {
+  background: var(--trip-accent, var(--accent));
+  border-color: var(--trip-accent, var(--accent));
+}
+.trip-menu-editor-row .btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--trip-accent, var(--accent)) 90%, white);
+  border-color: color-mix(in srgb, var(--trip-accent, var(--accent)) 90%, white);
+}
+.trip-menu-editor-row .btn-secondary {
+  border-color: var(--trip-accent, var(--accent));
+  color: var(--trip-accent, var(--text));
+}
+.trip-menu-editor-row .btn-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--trip-accent, var(--accent)) 15%, transparent);
+  border-color: var(--trip-accent, var(--accent));
 }
 #tripMenuAnimeCharBtn:not(.trip-menu-char-btn-with-photo) {
   font-size: 0.75rem;
@@ -2302,7 +2356,7 @@ body.parent-trip-view .map-container {
   font-size: 1rem;
   font-weight: 700;
   color: #fff;
-  background: var(--accent);
+  background: var(--trip-accent, var(--accent));
   border-radius: 8px;
   border: none;
   cursor: pointer;
@@ -2313,7 +2367,7 @@ body.parent-trip-view .map-container {
   transform: translateY(-1px);
 }
 .trip-menu-travelogue-link {
-  color: var(--accent);
+  color: var(--trip-accent, var(--accent));
   font-weight: 600;
   text-decoration: none;
 }
@@ -2331,7 +2385,7 @@ body.parent-trip-view .map-container {
 }
 .trip-menu-travelogue-summary-btn.trip-menu-travelogue-link-btn {
   color: #fff;
-  background: var(--accent);
+  background: var(--trip-accent, var(--accent));
   font-size: 1rem;
   font-weight: 700;
   padding: 0.5rem 1rem;
@@ -2362,6 +2416,30 @@ body.parent-trip-view .map-container {
   gap: 0.35rem;
   margin-bottom: 0.5rem;
 }
+.trip-menu-child-card .public-trip-card-inner {
+  padding: 0.5rem 0.6rem;
+  gap: 0.5rem;
+}
+.trip-menu-child-card .public-trip-thumb {
+  width: 48px;
+  height: 48px;
+}
+.trip-menu-child-card .public-trip-name {
+  font-size: 0.85rem;
+  margin-bottom: 0.15rem;
+}
+.trip-menu-child-card .public-trip-desc {
+  font-size: 0.7rem;
+  margin-bottom: 0.15rem;
+  -webkit-line-clamp: 2;
+}
+.trip-menu-child-card .public-trip-gpx-meta {
+  font-size: 0.65rem;
+  margin-bottom: 0;
+}
+.trip-menu-child-card {
+  cursor: pointer;
+}
 .trip-menu-child-row {
   display: flex;
   align-items: center;
@@ -2370,6 +2448,37 @@ body.parent-trip-view .map-container {
   background: var(--bg);
   border-radius: var(--radius);
   border: 1px solid var(--border);
+}
+.trip-menu-child-row-clickable {
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.trip-menu-child-row-clickable:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.trip-menu-child-order-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+.trip-menu-child-order-btn {
+  width: 1.4rem;
+  height: 1.1rem;
+  padding: 0;
+  font-size: 0.65rem;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.trip-menu-child-order-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .trip-menu-child-name {
   flex: 1;
@@ -2465,7 +2574,7 @@ body.parent-trip-view .map-container {
   padding: 0.35rem;
   font-size: 0.75rem;
   font-weight: 700;
-  background: var(--accent);
+  background: var(--trip-accent, var(--accent));
   color: #fff;
   border: 2px solid rgba(255,255,255,0.4);
   border-radius: 8px;
@@ -2477,7 +2586,7 @@ body.parent-trip-view .map-container {
 }
 .trip-menu-stamp-card:hover {
   transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(225,48,108,0.4);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--trip-accent, var(--accent)) 40%, transparent);
 }
 .trip-menu-stamp-card-filled {
   position: relative;
@@ -2529,7 +2638,7 @@ body.parent-trip-view .map-container {
   display: block;
   width: 8px;
   height: 8px;
-  background: var(--accent);
+  background: var(--trip-accent, var(--accent));
   border: 2px solid #fff;
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
@@ -2562,12 +2671,32 @@ body.parent-trip-view .map-container {
   gap: 0.35rem;
 }
 .public-trip-children {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease-out;
   margin-left: 1rem;
   padding-left: 0.5rem;
   border-left: 2px solid var(--border);
+}
+.public-trip-group.expanded .public-trip-children {
+  grid-template-rows: 1fr;
+}
+.public-trip-children-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.public-trip-expand-icon {
+  display: inline-block;
+  font-size: 0.6em;
+  margin-left: 0.25rem;
+  transition: transform 0.25s ease;
+  vertical-align: middle;
+}
+.public-trip-group.expanded .public-trip-expand-icon {
+  transform: rotate(-180deg);
 }
 .public-trip-child-card {
   border-left-width: 3px;
@@ -2664,6 +2793,22 @@ body.parent-trip-view .map-container {
   background: var(--bg-hover);
   color: var(--accent);
   border-color: var(--accent);
+}
+.public-trip-delete-btn {
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--danger, #dc2626);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.public-trip-delete-btn:hover {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: var(--danger, #dc2626);
 }
 
 .header-controls-sep {
@@ -3043,12 +3188,31 @@ body.parent-trip-view .map-container {
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: none;
   }
-  .header-title {
+  .header-brand {
     flex: 0 1 auto;
     min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .header-mobile-slogan {
+    display: block;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  body.trip-selected .header-mobile-slogan {
+    display: none !important;
+  }
+  .header-title {
+    flex: 0 0 auto;
+    min-width: 0;
     font-size: 1rem;
-    -webkit-text-fill-color: #fff;
-    color: #fff;
+    background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
   .header-trip-area {
     flex: 1;
@@ -3079,11 +3243,11 @@ body.parent-trip-view .map-container {
   }
   .header-controls-row {
     flex-wrap: nowrap;
-    gap: 0.4rem;
+    gap: 0.32rem;
   }
   .header-controls-row .btn {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.68rem;
     font-weight: 500;
     background: rgba(255, 255, 255, 0.18);
     color: #fff;
@@ -3103,12 +3267,14 @@ body.parent-trip-view .map-container {
     border-color: var(--trip-accent, var(--accent));
     color: #fff;
   }
-  .header-controls-row .header-anime-btn {
+  .header-controls-row .header-anime-btn,
+  .header-controls-row .header-video-btn {
     background: var(--trip-accent, var(--accent));
     border-color: var(--trip-accent, var(--accent));
     color: #fff;
   }
-  .header-controls-row .header-anime-btn:hover:not(:disabled) {
+  .header-controls-row .header-anime-btn:hover:not(:disabled),
+  .header-controls-row .header-video-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
     border-color: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
   }
@@ -3199,7 +3365,7 @@ body.parent-trip-view .map-container {
     border-top: none;
     background: rgba(26, 26, 26, 0.98);
     flex-shrink: 0;
-    transition: max-height 0.5s cubic-bezier(0.34, 1.12, 0.64, 1);
+    transition: max-height 0.4s cubic-bezier(0.32, 0.72, 0, 1);
     padding-bottom: env(safe-area-inset-bottom);
     overflow: hidden;
   }
@@ -3257,10 +3423,67 @@ body.parent-trip-view .map-container {
   .public-trips-panel .trip-menu-stamps .trip-menu-section-title {
     color: #fff;
   }
+  .public-trips-panel .trip-menu-children-list .public-trip-card {
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 25%, rgba(255, 255, 255, 0.1));
+    border-color: var(--trip-accent, var(--accent));
+  }
+  .public-trips-panel .trip-menu-children-list .public-trip-card:hover,
+  .public-trips-panel .trip-menu-children-list .public-trip-card:active {
+    background: color-mix(in srgb, var(--trip-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.15));
+    border-color: var(--trip-accent, var(--accent));
+  }
+  .public-trips-panel .trip-menu-children-list .public-trip-name {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+  .public-trips-panel .trip-menu-children-list .public-trip-desc,
+  .public-trips-panel .trip-menu-children-list .public-trip-gpx-meta {
+    color: rgba(255, 255, 255, 0.85);
+  }
+  /* モバイル：戻るボタンをコンパクトに（トリップを選べる） */
+  .public-trips-panel .mobile-back-to-trip-list {
+    width: auto;
+    padding: 0.28rem 0.48rem;
+    margin-top: 0.28rem;
+    margin-bottom: 0.4rem;
+    margin-right: 0.4rem;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 5px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 0.6rem;
+    font-weight: 500;
+    text-align: left;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+    min-height: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.2rem;
+  }
+  .public-trips-panel .mobile-back-to-trip-list:hover,
+  .public-trips-panel .mobile-back-to-trip-list:active {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.7);
+    color: #fff;
+  }
+  .public-trips-panel .trip-menu-back-btns-wrap {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.28rem;
+    margin-top: 0.4rem;
+  }
+  .public-trips-panel .mobile-back-to-trip-list .back-arrow {
+    font-size: 0.9em;
+    opacity: 0.9;
+  }
   .public-trips-panel .trip-menu-controls .btn {
     background: color-mix(in srgb, var(--trip-accent, var(--accent)) 25%, rgba(255, 255, 255, 0.18));
     color: #fff;
     border-color: var(--trip-accent, var(--accent));
+    padding: 0.32rem 0.5rem;
+    font-size: 0.68rem;
   }
   .public-trips-panel .trip-menu-controls .btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--trip-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.28));
@@ -3269,6 +3492,22 @@ body.parent-trip-view .map-container {
     background: var(--trip-accent, var(--accent));
     border-color: var(--trip-accent, var(--accent));
     color: #fff;
+  }
+  .public-trips-panel .trip-menu-editor-row .btn {
+    height: 1.8rem;
+    min-height: 1.8rem;
+    padding: 0 0.6rem;
+    font-size: 0.7rem;
+  }
+  .public-trips-panel .trip-menu-char-btn-with-photo .trip-menu-char-btn-img {
+    width: 1.6rem;
+    height: 1.6rem;
+    min-width: 1.6rem;
+    min-height: 1.6rem;
+  }
+  .public-trips-panel .trip-menu-anime-gen-row select {
+    padding: 0.16rem 0.4rem;
+    font-size: 0.68rem;
   }
   .public-trips-panel .trip-menu-travelogue-info {
     color: rgba(255, 255, 255, 0.85);
@@ -3279,6 +3518,11 @@ body.parent-trip-view .map-container {
   .public-trips-panel .trip-menu-travelogue-summary-btn {
     background: var(--trip-accent, var(--accent));
     color: #fff;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  .public-trips-panel .trip-menu-summary-btns {
+    gap: 0.32rem;
   }
   .public-trips-panel .trip-menu-thumb:hover {
     border-color: var(--trip-accent, var(--accent));
@@ -3311,12 +3555,12 @@ body.parent-trip-view .map-container {
   }
   .trip-menu-nav-arrow .trip-menu-nav-arrow-mobile {
     display: inline;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 300;
   }
   .trip-menu-nav-arrow {
-    width: 44px;
-    height: 44px;
+    width: 35px;
+    height: 35px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -3366,29 +3610,49 @@ body.parent-trip-view .map-container {
     scrollbar-width: none;
   }
   .public-trips-list.public-trips-list-children-view {
-    flex-direction: column;
-    overflow-x: hidden;
-    overflow-y: auto;
-    flex-wrap: wrap;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
   }
-  .public-trips-list.public-trips-list-children-view .mobile-back-to-trip-list {
+  .public-trips-list.public-trips-list-children-view .mobile-back-to-children-view {
     flex-shrink: 0;
-    margin-bottom: 0.5rem;
+    padding: 0.28rem 0.48rem;
+    font-size: 0.64rem;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9);
+  }
+  .public-trips-list.public-trips-list-children-view .mobile-back-to-children-view:hover,
+  .public-trips-list.public-trips-list-children-view .mobile-back-to-children-view:active {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .public-trips-list.public-trips-list-children-view .public-trips-children-only {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
   .public-trips-list::-webkit-scrollbar {
     display: none;
   }
   .public-trip-card {
     flex-shrink: 0;
-    min-width: 100px;
+    min-width: 80px;
     padding: 0;
     background: color-mix(in srgb, var(--trip-accent, var(--accent)) 25%, rgba(255, 255, 255, 0.1));
     border: 2px solid var(--trip-accent, var(--accent));
-    border-radius: 12px;
+    border-radius: 10px;
   }
   .public-trip-card-inner {
     flex-direction: column;
-    padding: 0.6rem 0.85rem;
+    padding: 0.48rem 0.68rem;
     align-items: center;
     text-align: center;
   }
@@ -3405,7 +3669,7 @@ body.parent-trip-view .map-container {
     border-color: var(--trip-accent, var(--accent));
   }
   .public-trip-card .public-trip-name {
-    font-size: 0.85rem;
+    font-size: 0.68rem;
     font-weight: 600;
     color: #fff;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -3614,22 +3878,22 @@ body.parent-trip-view .map-container {
     gap: 0.4rem;
   }
   .hamburger-btn {
-    width: 36px;
-    height: 36px;
-    gap: 3px;
+    width: 29px;
+    height: 29px;
+    gap: 2px;
   }
   .hamburger-btn span {
-    width: 14px;
+    width: 11px;
   }
   .trip-name-nav .trip-info-name {
     font-size: 0.9rem;
   }
   .header-controls-row .btn {
-    padding: 0.45rem 0.65rem;
-    font-size: 0.8rem;
+    padding: 0.36rem 0.52rem;
+    font-size: 0.64rem;
   }
   .public-trip-card {
-    min-width: 90px;
+    min-width: 72px;
   }
   .photo-popup .popup-photo-content {
     width: min(348px, calc(100vw - 1.5rem));
@@ -3654,6 +3918,13 @@ body.parent-trip-view .map-container {
   .menu-body {
     padding: 0.6rem;
   }
+}
+
+/* 戻るボタンラッパー */
+.trip-menu-back-btns-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 /* モバイル：戻るボタン */

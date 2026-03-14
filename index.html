@@ -13,7 +13,10 @@
 <body>
   <div class="app">
     <header class="header">
-      <h1 class="header-title header-title-link" id="headerTitle" title="ホームに戻る">AirGo</h1>
+      <div class="header-brand">
+        <h1 class="header-title header-title-link" id="headerTitle" title="ホームに戻る">AirGo</h1>
+        <span class="header-mobile-slogan">旅を選んでAirで旅Goしてる気分に↓</span>
+      </div>
       <div class="header-trip-area">
         <div class="header-controls-row" id="headerControlsRow">
           <span class="trip-name-nav" id="tripNameNav" style="display:none">
@@ -22,6 +25,7 @@
             <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="photoNextBtnHeader"><span class="header-btn-text-desktop">次へ</span><span class="header-btn-text-mobile">次</span></button>
             <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled><span class="play-btn-label-play"><span class="header-btn-text-desktop">▶ 自動再生</span><span class="header-btn-text-mobile">▶︎再生</span></span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
             <button type="button" class="btn btn-secondary btn-sm header-anime-btn header-mobile-only" id="headerAnimeBtn" title="アニメ画像を表示" style="display:none">アニメ</button>
+            <button type="button" class="btn btn-secondary btn-sm header-video-btn header-mobile-only" id="headerVideoBtn" title="動画を表示" style="display:none">動画</button>
           </span>
           <span class="header-controls-sep" id="headerControlsSep" style="display:none">|</span>
           <select id="intervalSelect">
@@ -79,13 +83,21 @@
             <div class="trip-gpx-info" id="tripGpxInfo" style="display:none"></div>
           </div>
           <div class="menu-field editor-only" id="tripUrlField">
-            <input type="url" id="tripUrlInput" class="menu-input" placeholder="トリップのURL（任意）">
+            <input type="url" id="tripUrlInput" class="menu-input" placeholder="ブログURL（任意）">
+          </div>
+          <div class="menu-field editor-only" id="tripVideoUrlField">
+            <input type="url" id="tripVideoUrlInput" class="menu-input" placeholder="動画URL（任意）">
           </div>
           <div class="menu-field editor-only" id="tripPublicField">
             <label class="menu-checkbox">
               <input type="checkbox" id="tripPublicInput">
               <span>公開する（ログインなしで閲覧可能）</span>
             </label>
+          </div>
+          <div class="menu-field editor-only" id="tripDateField" style="display:none">
+            <label for="tripDateInput">日付・時間（並び順に使用）</label>
+            <input type="datetime-local" id="tripDateInput" class="menu-input" placeholder="GPS情報がない場合に入力">
+            <span class="trip-date-hint" id="tripDateHint"></span>
           </div>
           <div class="menu-field editor-only" id="tripParentField">
             <label class="menu-checkbox">
@@ -275,8 +287,8 @@
         </div>
         <div class="modal-body">
           <div class="photo-edit-preview" id="photoEditPreview"></div>
-          <div class="modal-field photo-edit-add-photo-field" id="photoEditAddPhotoField" style="display:none">
-            <label>写真を追加:</label>
+          <div class="modal-field photo-edit-photo-update-field" id="photoEditPhotoUpdateField">
+            <label id="photoEditPhotoUpdateLabel">写真を追加:</label>
             <input type="file" id="photoEditAddPhotoInput" accept="image/*,.jpg,.jpeg,.JPG,.JPEG,.png,.PNG" class="modal-input">
           </div>
           <div class="modal-field">
@@ -440,6 +452,19 @@
             <button type="button" class="btn btn-secondary" id="urlPopupCopy">コピー</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ブログ・旅行記表示モーダル（モバイル用） -->
+  <div class="modal-overlay" id="webviewModal">
+    <div class="modal webview-modal">
+      <div class="modal-header">
+        <h2 id="webviewModalTitle">ブログ</h2>
+        <button type="button" class="modal-close" id="webviewModalClose" aria-label="閉じる">&times;</button>
+      </div>
+      <div class="modal-body webview-modal-body">
+        <iframe id="webviewModalIframe" title="ブログ・旅行記"></iframe>
       </div>
     </div>
   </div>
