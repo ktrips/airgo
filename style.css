@@ -230,7 +230,7 @@ body {
   min-height: 0;
 }
 .trip-info-meta {
-  font-size: 0.75rem;
+  font-size: 0.6rem;
   color: var(--text-muted);
   display: flex;
   flex-wrap: wrap;
@@ -1405,8 +1405,8 @@ select {
   position: absolute;
   top: max(1rem, env(safe-area-inset-top));
   right: max(1rem, env(safe-area-inset-right));
-  padding: 0.51rem 1.02rem;
-  font-size: 1.02rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.92rem;
   font-weight: 800;
   color: #fff;
   background: var(--trip-accent, var(--accent));
@@ -1426,9 +1426,60 @@ select {
 }
 @media (max-width: 768px) {
   .map-trip-name-overlay {
-    font-size: 0.77rem;
-    padding: 0.38rem 0.77rem;
+    font-size: 0.56rem;
+    padding: 0.22rem 0.5rem;
   }
+}
+
+/* モバイル：地図エリアでの動画再生オーバーレイ */
+.mobile-video-overlay {
+  display: none !important;
+  position: absolute;
+  inset: 0;
+  z-index: 800;
+  background: #000;
+  flex-direction: column;
+}
+@media (max-width: 768px) {
+  .mobile-video-overlay.visible {
+    display: flex !important;
+  }
+}
+.mobile-video-back-btn {
+  position: absolute;
+  top: max(0.5rem, env(safe-area-inset-top));
+  left: max(0.75rem, env(safe-area-inset-left));
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.mobile-video-back-btn:hover,
+.mobile-video-back-btn:active {
+  background: rgba(0, 0, 0, 0.8);
+}
+.mobile-video-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+}
+.mobile-video-content video,
+.mobile-video-content iframe {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.mobile-video-content iframe {
+  border: none;
 }
 @keyframes map-trip-name-float {
   0%, 100% { transform: translateX(0) translateY(0); }
@@ -1451,17 +1502,17 @@ select {
   font-family: var(--font);
 }
 
-/* ランドマーク番号マーカー（目立つ表示・20%縮小） */
+/* ランドマーク番号マーカー（ウェブ20%縮小：31→25px） */
 .landmark-marker-num {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 32px !important;
-  height: 32px !important;
+  width: 25px !important;
+  height: 25px !important;
   border-radius: 50%;
   background: var(--accent);
   color: #fff !important;
-  font-size: 14px !important;
+  font-size: 11px !important;
   font-weight: 800 !important;
   line-height: 1 !important;
   text-align: center;
@@ -1471,25 +1522,25 @@ select {
 }
 .landmark-marker-plain {
   display: inline-block !important;
-  width: 19px !important;
-  height: 19px !important;
+  width: 13px !important;
+  height: 13px !important;
   border-radius: 50%;
   background: #fff;
   border: 2px solid #999;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-/* モバイル：ポイントマーカーを小さく（さらに20%縮小） */
+/* モバイル：ポイントマーカーを小さく（ランドマーク10%縮小・通常30%縮小） */
 @media (max-width: 768px) {
   .photo-marker-mobile .landmark-marker-num {
-    width: 18px !important;
-    height: 18px !important;
-    font-size: 9px !important;
+    width: 17px !important;
+    height: 17px !important;
+    font-size: 8px !important;
     border-width: 1.5px !important;
   }
   .photo-marker-mobile .landmark-marker-plain {
-    width: 10px !important;
-    height: 10px !important;
+    width: 8px !important;
+    height: 8px !important;
     border-width: 1.5px !important;
   }
 }
@@ -1773,6 +1824,87 @@ select {
   font-size: 0.9rem;
   color: var(--text-muted);
 }
+.parent-thumbnail-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--text);
+}
+.parent-thumbnail-selected-wrap {
+  margin-bottom: 1.25rem;
+}
+.parent-thumbnail-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  min-height: 2rem;
+}
+.parent-thumbnail-selected-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+.parent-thumbnail-selected-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 90px;
+  padding: 0.4rem;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: rgba(225, 48, 108, 0.06);
+}
+.parent-thumbnail-selected-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 0.25rem;
+}
+.parent-thumbnail-selected-label {
+  font-size: 0.7rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  margin-bottom: 0.35rem;
+}
+.parent-thumbnail-selected-actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+.parent-thumbnail-order-btn,
+.parent-thumbnail-delete-btn {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  min-width: 28px;
+}
+.parent-thumbnail-order-btn:hover:not(:disabled),
+.parent-thumbnail-delete-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.parent-thumbnail-order-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.parent-thumbnail-delete-btn {
+  color: #ed4956;
+  border-color: rgba(237, 73, 86, 0.4);
+}
+.parent-thumbnail-delete-btn:hover {
+  background: rgba(237, 73, 86, 0.1);
+  border-color: #ed4956;
+}
+.parent-thumbnail-candidates-wrap {
+  margin-top: 0.5rem;
+}
 .parent-thumbnail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -1796,6 +1928,11 @@ select {
 .parent-thumbnail-option.selected {
   border-color: var(--accent);
   background: rgba(225, 48, 108, 0.08);
+}
+.parent-thumbnail-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 .parent-thumbnail-option img {
   width: 100%;
@@ -1827,6 +1964,56 @@ select {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+/* 親トリップ詳細：アニメ直下のサムネイル表示エリア */
+.trip-menu-parent-thumbnail-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.trip-menu-parent-thumbnail-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  min-height: 2rem;
+}
+.trip-menu-parent-thumbnail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 80px;
+  padding: 0.35rem;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: rgba(225, 48, 108, 0.06);
+}
+.trip-menu-parent-thumbnail-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 0.2rem;
+}
+.trip-menu-parent-thumbnail-label {
+  font-size: 0.65rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  margin-bottom: 0.25rem;
+}
+.trip-menu-parent-thumbnail-actions {
+  display: flex;
+  gap: 0.2rem;
+  align-items: center;
+}
+.trip-menu-parent-thumbnail-actions .parent-thumbnail-order-btn,
+.trip-menu-parent-thumbnail-actions .parent-thumbnail-delete-btn {
+  padding: 0.15rem 0.3rem;
+  font-size: 0.7rem;
 }
 
 /* ブログ・旅行記表示モーダル（モバイル用） */
@@ -2051,9 +2238,9 @@ select {
 }
 .trip-menu-nav-row .trip-menu-title {
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.01em;
-  color: var(--text);
+  color: var(--trip-accent, var(--text));
   margin: 0;
   line-height: 1.4;
   word-break: break-word;
@@ -2084,7 +2271,7 @@ select {
 }
 .trip-menu-header-section .trip-menu-meta {
   margin: 0.5rem 0 0;
-  font-size: 0.75rem;
+  font-size: 0.6rem;
   font-weight: 400;
   color: var(--text-muted);
   letter-spacing: 0.01em;
@@ -2106,9 +2293,16 @@ select {
 .trip-menu-title {
   font-size: 0.9rem;
   font-weight: 700;
-  color: var(--text);
-  margin: 0 0 0.35rem;
-  line-height: 1.4;
+  color: var(--trip-accent, var(--text));
+}
+.trip-menu-blog-link {
+  color: var(--trip-accent, var(--accent));
+  text-decoration: underline;
+  cursor: pointer;
+  font-weight: 600;
+}
+.trip-menu-blog-link:hover {
+  color: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
 }
 .trip-menu-name {
   font-size: 1rem;
@@ -2134,13 +2328,17 @@ select {
 }
 .trip-menu-summary-row {
   display: flex;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
   align-items: flex-start;
   margin-bottom: 0.75rem;
 }
 .trip-menu-anime-all-wrap {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+}
+.trip-menu-anime-upload-row {
+  flex-shrink: 0;
 }
 .trip-menu-anime-all-list {
   display: flex;
@@ -2234,6 +2432,16 @@ select {
 }
 .trip-menu-summary-controls {
   margin: 0;
+  align-items: flex-start;
+}
+.trip-menu-summary-controls .trip-menu-controls-row {
+  justify-content: flex-start;
+}
+.trip-menu-summary-controls .btn,
+.trip-menu-summary-controls .trip-menu-travelogue-summary-btn,
+.trip-menu-summary-controls .trip-menu-anime-summary-btn,
+.trip-menu-summary-controls .trip-menu-video-btn {
+  flex: none;
 }
 .trip-menu-editor-row {
   margin-top: 0.5rem;
@@ -2311,6 +2519,7 @@ select {
 .trip-menu-desc {
   font-weight: 700;
   line-height: 1.5;
+  color: var(--trip-accent, var(--text));
 }
 .trip-menu-controls {
   display: flex;
@@ -2325,6 +2534,7 @@ select {
 }
 .trip-menu-photo-count {
   flex-shrink: 0;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text);
 }
@@ -2552,8 +2762,23 @@ select {
   text-align: left;
 }
 .trip-menu-meta {
-  font-size: 0.75em;
+  font-size: 0.6em;
   color: var(--text-muted);
+}
+.trip-menu-stamps {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+.trip-menu-stamp-btn {
+  background: var(--trip-accent, var(--accent));
+  border-color: var(--trip-accent, var(--accent));
+  color: #fff;
+}
+.trip-menu-stamp-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
+  border-color: color-mix(in srgb, var(--trip-accent, var(--accent)) 85%, white);
+  color: #fff;
 }
 .trip-menu-stamps-title {
   font-size: 0.9rem;
@@ -2741,7 +2966,7 @@ select {
   flex: 1;
 }
 .public-trip-card .public-trip-name {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text);
   margin-bottom: 0.25rem;
@@ -2750,9 +2975,9 @@ select {
   text-overflow: ellipsis;
 }
 .public-trip-card .public-trip-desc {
-  font-size: 0.75rem;
+  font-size: 0.6rem;
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--trip-accent, var(--text-muted));
   line-height: 1.4;
   margin-bottom: 0.25rem;
   display: -webkit-box;
@@ -2761,13 +2986,13 @@ select {
   overflow: hidden;
 }
 .public-trip-card .public-trip-gpx-meta {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   color: var(--text-muted);
   line-height: 1.3;
   margin-bottom: 0.2rem;
 }
 .public-trip-card .public-trip-meta {
-  font-size: 0.75rem;
+  font-size: 0.6rem;
   color: var(--text-muted);
 }
 .public-trip-order-btns {
@@ -3014,6 +3239,27 @@ select {
   font-size: 0.8rem;
   margin-bottom: 0.5rem;
 }
+/* 旅行記・アニメ・動画・▶︎再生・スタンプボタンのサイズを統一（やや大きめ） */
+.play-btn,
+.header-travelogue-btn,
+.header-anime-btn,
+.header-video-btn,
+.menu-travelogue-btn,
+.menu-anime-btn,
+.menu-video-btn,
+.trip-menu-controls .play-btn,
+.trip-menu-travelogue-summary-btn,
+.trip-menu-anime-summary-btn,
+.trip-menu-video-btn,
+.trip-menu-stamp-btn {
+  padding: 0.36rem 0.75rem !important;
+  font-size: 0.8rem !important;
+}
+/* ▶︎再生ボタン：文字を1行に収める */
+.play-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 /* === Status === */
 .status {
@@ -3165,15 +3411,35 @@ select {
     background: var(--mobile-bg);
   }
 
-  /* モバイルヘッダー：AirGo、トリップ名5文字、前、次、▶︎再生、アニメ、ハンバーガー */
+  /* モバイルヘッダー：‹ トリップ名 › 前 次 ▶︎写真再生 アニメ 動画 */
   .header-mobile-only {
     display: inline-flex !important;
+  }
+  .header-mobile-hide {
+    display: none !important;
+  }
+  /* モバイル：再生の左側に小さな「前」「次」ボタン */
+  .header-controls-row .header-photo-nav-btn {
+    padding: 0.2rem 0.4rem !important;
+    font-size: 0.64rem !important;
+    min-width: 1.6rem;
   }
   .header-btn-text-desktop {
     display: none;
   }
   .header-btn-text-mobile {
     display: inline;
+  }
+  .header-trip-nav .header-trip-name {
+    min-width: 0;
+    max-width: 10em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--trip-accent, #fff);
   }
   .header {
     position: sticky;
@@ -3196,13 +3462,6 @@ select {
     gap: 0.35rem;
   }
   .header-mobile-slogan {
-    display: block;
-    font-size: 0.6rem;
-    color: rgba(255, 255, 255, 0.75);
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  body.trip-selected .header-mobile-slogan {
     display: none !important;
   }
   .header-title {
@@ -3286,6 +3545,19 @@ select {
   }
   .menu-mobile-controls {
     display: none !important;
+  }
+  .header-trip-nav {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .header-trip-nav .btn {
+    padding: 0.22rem 0.32rem;
+    font-size: 0.75rem;
+    min-width: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* メイン：ヘッダー下に地図・下にボトムシート */
@@ -3399,13 +3671,16 @@ select {
   .public-trips-panel .trip-menu-nav-label {
     color: #fff;
   }
-  .public-trips-panel .trip-menu-title,
+  .public-trips-panel .trip-menu-title {
+    color: var(--trip-accent, #fff);
+  }
   .public-trips-panel .trip-menu-name {
     color: #fff;
   }
   .public-trips-panel .trip-menu-photo-count,
   .public-trips-panel .trip-menu-photo-count.trip-menu-photo-count-clickable {
     color: var(--trip-accent, #fff);
+    font-size: 0.72rem;
   }
   .public-trips-panel .trip-menu-meta {
     color: rgba(255, 255, 255, 0.8);
@@ -3438,7 +3713,7 @@ select {
   }
   .public-trips-panel .trip-menu-children-list .public-trip-desc,
   .public-trips-panel .trip-menu-children-list .public-trip-gpx-meta {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--trip-accent, rgba(255, 255, 255, 0.85));
   }
   /* モバイル：戻るボタンをコンパクトに（トリップを選べる） */
   .public-trips-panel .mobile-back-to-trip-list {
@@ -3482,8 +3757,11 @@ select {
     background: color-mix(in srgb, var(--trip-accent, var(--accent)) 25%, rgba(255, 255, 255, 0.18));
     color: #fff;
     border-color: var(--trip-accent, var(--accent));
-    padding: 0.32rem 0.5rem;
-    font-size: 0.68rem;
+    padding: 0.28rem 0.6rem;
+    font-size: 0.72rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .public-trips-panel .trip-menu-controls .btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--trip-accent, var(--accent)) 35%, rgba(255, 255, 255, 0.28));
@@ -3515,10 +3793,12 @@ select {
   .public-trips-panel .trip-menu-travelogue-link {
     color: var(--trip-accent, #f472b6);
   }
-  .public-trips-panel .trip-menu-travelogue-summary-btn {
+  .public-trips-panel .trip-menu-travelogue-summary-btn,
+  .public-trips-panel .trip-menu-anime-summary-btn,
+  .public-trips-panel .trip-menu-video-btn {
     background: var(--trip-accent, var(--accent));
     color: #fff;
-    padding: 0.4rem 0.8rem;
+    padding: 0.36rem 0.75rem;
     font-size: 0.8rem;
   }
   .public-trips-panel .trip-menu-summary-btns {
@@ -3555,12 +3835,12 @@ select {
   }
   .trip-menu-nav-arrow .trip-menu-nav-arrow-mobile {
     display: inline;
-    font-size: 1.2rem;
+    font-size: 1rem;
     font-weight: 300;
   }
   .trip-menu-nav-arrow {
-    width: 35px;
-    height: 35px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -3571,19 +3851,25 @@ select {
   .trip-menu-nav-arrow:active:not(:disabled) {
     background: rgba(0, 0, 0, 0.05);
   }
+  /* モバイル：トリップ説明のフォントを少し小さく */
+  .trip-menu-nav-row .trip-menu-title,
+  .trip-menu-nav-row .trip-menu-nav-label {
+    font-size: 0.88rem;
+  }
   /* モバイル：トリップ詳細の MAP を非表示、サムネイルは残す */
   .trip-menu-map-section .trip-menu-map {
     display: none !important;
   }
-  /* モバイル：アニメボタンは表示、アニメサムネイルは非表示 */
+  /* モバイル：アニメボタンは表示、アニメサムネイル・アップロードは非表示 */
   .trip-menu-anime-all-wrap {
     display: none !important;
   }
-  /* モバイル：スタンプボタンは表示、TRIP STAMPS セクションは非表示 */
-  .trip-menu-stamps {
+  .trip-menu-anime-upload-row {
     display: none !important;
   }
-  /* モバイル：前へ→<<、次へ→>> */
+  /* モバイル：スタンプボタンは表示、TRIP STAMPS セクションは非表示 */
+  /* モバイル：TRIP STAMPS セクション（スタンプボタン）を表示 */
+  /* モバイル：前へ→前、次へ→次 */
   .trip-menu-controls .trip-menu-btn-text-desktop {
     display: none;
   }
@@ -3669,7 +3955,7 @@ select {
     border-color: var(--trip-accent, var(--accent));
   }
   .public-trip-card .public-trip-name {
-    font-size: 0.68rem;
+    font-size: 0.52rem;
     font-weight: 600;
     color: #fff;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -3812,6 +4098,10 @@ select {
   }
   .trip-list-item-name {
     color: #fff;
+    font-size: 1.1rem;
+  }
+  .trip-list-item-child .trip-list-item-name {
+    font-size: 0.98rem;
   }
 
   /* ポップアップ：写真を小さく */

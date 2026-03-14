@@ -19,13 +19,18 @@
       </div>
       <div class="header-trip-area">
         <div class="header-controls-row" id="headerControlsRow">
+          <span class="header-trip-nav header-mobile-only" id="headerTripNav" style="display:none">
+            <button type="button" class="btn btn-secondary btn-sm trip-prev-btn" id="tripPrevBtnHeader" title="前のトリップ">‹</button>
+            <span class="photo-nav-label photo-all-photos-btn trip-info-name header-trip-name" id="tripInfoName" title="全ての写真をサムネイル表示">写真（0枚）</span>
+            <button type="button" class="btn btn-secondary btn-sm trip-next-btn" id="tripNextBtnHeader" title="次のトリップ">›</button>
+          </span>
           <span class="trip-name-nav" id="tripNameNav" style="display:none">
-            <span class="photo-nav-label photo-all-photos-btn trip-info-name" id="tripInfoName" title="全ての写真をサムネイル表示">写真（0枚）</span>
-            <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="photoPrevBtnHeader"><span class="header-btn-text-desktop">前へ</span><span class="header-btn-text-mobile">前</span></button>
-            <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="photoNextBtnHeader"><span class="header-btn-text-desktop">次へ</span><span class="header-btn-text-mobile">次</span></button>
+            <button type="button" class="btn btn-secondary btn-sm photo-prev-btn header-photo-nav-btn" id="photoPrevBtnHeader"><span class="header-btn-text-desktop">前へ</span><span class="header-btn-text-mobile">前</span></button>
+            <button type="button" class="btn btn-secondary btn-sm photo-next-btn header-photo-nav-btn" id="photoNextBtnHeader"><span class="header-btn-text-desktop">次へ</span><span class="header-btn-text-mobile">次</span></button>
             <button type="button" class="btn btn-primary btn-sm play-btn" id="playBtn" disabled><span class="play-btn-label-play"><span class="header-btn-text-desktop">▶ 自動再生</span><span class="header-btn-text-mobile">▶︎再生</span></span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
-            <button type="button" class="btn btn-secondary btn-sm header-anime-btn header-mobile-only" id="headerAnimeBtn" title="アニメ画像を表示" style="display:none">アニメ</button>
-            <button type="button" class="btn btn-secondary btn-sm header-video-btn header-mobile-only" id="headerVideoBtn" title="動画を表示" style="display:none">動画</button>
+            <button type="button" class="btn btn-secondary btn-sm header-travelogue-btn header-mobile-hide" id="headerTravelogueBtn" title="旅行記を表示" style="display:none">旅行記</button>
+            <button type="button" class="btn btn-secondary btn-sm header-anime-btn" id="headerAnimeBtn" title="アニメ画像を表示" style="display:none">アニメ</button>
+            <button type="button" class="btn btn-secondary btn-sm header-video-btn" id="headerVideoBtn" title="動画を表示" style="display:none">動画</button>
           </span>
           <span class="header-controls-sep" id="headerControlsSep" style="display:none">|</span>
           <select id="intervalSelect">
@@ -66,7 +71,10 @@
             <span class="photo-nav-label photo-all-photos-btn all-photos-btn" id="menuAllPhotosBtn" title="全ての写真をサムネイル表示">写真（0枚）</span>
             <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="menuPrevBtn">前へ</button>
             <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="menuNextBtn">次へ</button>
-            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled><span class="play-btn-label-play">▶ 自動再生</span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
+            <button type="button" class="btn btn-primary btn-sm play-btn" id="menuPlayBtn" disabled><span class="play-btn-label-play">▶︎再生</span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
+            <button type="button" class="btn btn-secondary btn-sm menu-travelogue-btn" id="menuTravelogueBtn" title="旅行記を表示" style="display:none">旅行記</button>
+            <button type="button" class="btn btn-secondary btn-sm menu-anime-btn" id="menuAnimeBtn" title="アニメ画像を表示" style="display:none">アニメ</button>
+            <button type="button" class="btn btn-secondary btn-sm menu-video-btn" id="menuVideoBtn" title="動画を表示" style="display:none">動画</button>
           </div>
         </section>
         <section class="menu-section">
@@ -318,6 +326,10 @@
       <button type="button" class="play-mode-stop-btn" id="playModeStopBtn" aria-label="停止" title="再生を停止">■ 停止</button>
       <div class="map-container">
         <div id="map"></div>
+        <div class="mobile-video-overlay" id="mobileVideoOverlay">
+          <button type="button" class="mobile-video-back-btn" id="mobileVideoBackBtn" aria-label="戻る" title="地図に戻る">‹ 戻る</button>
+          <div class="mobile-video-content" id="mobileVideoContent"></div>
+        </div>
         <div class="map-search-box desktop-only" id="mapSearchBox">
           <input type="text" id="mapSearchInput" class="map-search-input" placeholder="地名を検索" autocomplete="off">
           <div class="map-search-results" id="mapSearchResults"></div>
@@ -431,8 +443,15 @@
         <button type="button" class="modal-close" id="parentThumbnailModalClose" aria-label="閉じる">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="parent-thumbnail-hint">親トリップの一覧表示に使うサムネイルを選んでください。</p>
-        <div id="parentThumbnailGrid" class="parent-thumbnail-grid"></div>
+        <p class="parent-thumbnail-hint">親トリップの一覧表示に使うサムネイルを選んでください。複数選択可。選んだ後に左右で並び替え・削除ができます。</p>
+        <div class="parent-thumbnail-selected-wrap">
+          <h3 class="parent-thumbnail-section-title">選択中</h3>
+          <div id="parentThumbnailSelected" class="parent-thumbnail-selected"></div>
+        </div>
+        <div class="parent-thumbnail-candidates-wrap">
+          <h3 class="parent-thumbnail-section-title">選択肢（クリックで追加）</h3>
+          <div id="parentThumbnailGrid" class="parent-thumbnail-grid"></div>
+        </div>
       </div>
     </div>
   </div>

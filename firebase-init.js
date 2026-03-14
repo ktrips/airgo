@@ -16,7 +16,15 @@
     return;
   }
   try {
-    const app = firebase.initializeApp(FIREBASE_CONFIG);
+    // iOS Safari 等でサードパーティストレージがブロックされる問題を回避するため、
+    // カスタムドメインでアクセス時は authDomain を同一ドメインに設定
+    const config = { ...FIREBASE_CONFIG };
+    const host = typeof window !== 'undefined' ? window.location.hostname : '';
+    if (/^air(go)?\.ktrips\.net$/.test(host)) {
+      config.authDomain = host;
+      console.log('Firebase: authDomain を', host, 'に設定（iOS Safari 対応）');
+    }
+    const app = firebase.initializeApp(config);
     window.firebaseApp = app;
     window.firebaseAuth = firebase.auth(app);
     const db = firebase.firestore(app);

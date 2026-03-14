@@ -704,6 +704,7 @@ async function processOfflineQueue() {
 async function saveTripWithOfflineSupport(trip) {
   // 常に IndexedDB に保存
   await saveTripToDB(trip);
+  invalidateMergedTripsCache();
 
   if (navigator.onLine && window.firebaseDb && window.firebaseAuth?.currentUser) {
     // オンライン → Firestore に即座に保存
@@ -743,6 +744,7 @@ async function saveTripWithOfflineSupport(trip) {
 async function deleteTripWithOfflineSupport(id) {
   // 常に IndexedDB から削除
   await deleteTripFromDB(id);
+  invalidateMergedTripsCache();
 
   if (navigator.onLine && window.firebaseDb && window.firebaseAuth?.currentUser) {
     // オンライン → Firestore から即座に削除
@@ -1854,8 +1856,8 @@ async function addHomeMarkers(trips) {
     const color = getTripColor(trip || tripId);
     const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
     const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
-    const sz = isMobile ? (hasLandmarkNo ? [18, 18] : [10, 10]) : (hasLandmarkNo ? [32, 32] : [19, 19]);
-    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [5, 5]) : (hasLandmarkNo ? [16, 16] : [10, 10]);
+    const sz = isMobile ? (hasLandmarkNo ? [17, 17] : [8, 8]) : (hasLandmarkNo ? [25, 25] : [13, 13]);
+    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [4, 4]) : (hasLandmarkNo ? [13, 13] : [7, 7]);
     const icon = L.divIcon({
       className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain') + (isMobile ? ' photo-marker-mobile' : ''),
       html: hasLandmarkNo
@@ -1864,7 +1866,7 @@ async function addHomeMarkers(trips) {
       iconSize: sz,
       iconAnchor: anchor,
     });
-    const marker = L.marker([photo.lat, photo.lng], { icon })
+    const marker = L.marker([photo.lat, photo.lng], { icon, zIndexOffset: hasLandmarkNo ? 1000 : 0 })
       .addTo(map)
       .bindPopup(buildPhotoPopupHtml(photo, photoIndex), {
         maxWidth: 488,
@@ -1928,8 +1930,8 @@ async function addPublicTripMarkers() {
     const color = getTripColor(trip || tripId);
     const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
     const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
-    const sz = isMobile ? (hasLandmarkNo ? [18, 18] : [10, 10]) : (hasLandmarkNo ? [32, 32] : [19, 19]);
-    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [5, 5]) : (hasLandmarkNo ? [16, 16] : [10, 10]);
+    const sz = isMobile ? (hasLandmarkNo ? [17, 17] : [8, 8]) : (hasLandmarkNo ? [25, 25] : [13, 13]);
+    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [4, 4]) : (hasLandmarkNo ? [13, 13] : [7, 7]);
     const icon = L.divIcon({
       className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain') + (isMobile ? ' photo-marker-mobile' : ''),
       html: hasLandmarkNo
@@ -1938,7 +1940,7 @@ async function addPublicTripMarkers() {
       iconSize: sz,
       iconAnchor: anchor,
     });
-    const marker = L.marker([photo.lat, photo.lng], { icon })
+    const marker = L.marker([photo.lat, photo.lng], { icon, zIndexOffset: hasLandmarkNo ? 1000 : 0 })
       .addTo(map)
       .bindPopup(buildPhotoPopupHtml(photo, photoIndex), {
         maxWidth: 488,
@@ -2024,8 +2026,8 @@ async function addParentTripChildMarkers(parentId) {
     const color = getTripColor(trip || tripId);
     const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
     const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
-    const sz = isMobile ? (hasLandmarkNo ? [18, 18] : [10, 10]) : (hasLandmarkNo ? [32, 32] : [19, 19]);
-    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [5, 5]) : (hasLandmarkNo ? [16, 16] : [10, 10]);
+    const sz = isMobile ? (hasLandmarkNo ? [17, 17] : [8, 8]) : (hasLandmarkNo ? [25, 25] : [13, 13]);
+    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [4, 4]) : (hasLandmarkNo ? [13, 13] : [7, 7]);
     const icon = L.divIcon({
       className: 'photo-marker photo-marker-' + (hasLandmarkNo ? 'landmark' : 'plain') + (isMobile ? ' photo-marker-mobile' : ''),
       html: hasLandmarkNo
@@ -2035,7 +2037,7 @@ async function addParentTripChildMarkers(parentId) {
       iconAnchor: anchor,
     });
     const popupHtml = buildPhotoPopupHtml(photo, photoIndex) + (tripName ? `<p class="photo-popup-trip-name" style="margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);">${escapeHtml(tripName)}</p>` : '');
-    const marker = L.marker([photo.lat, photo.lng], { icon })
+    const marker = L.marker([photo.lat, photo.lng], { icon, zIndexOffset: hasLandmarkNo ? 1000 : 0 })
       .addTo(map)
       .bindPopup(popupHtml, {
         maxWidth: 488,
@@ -2077,8 +2079,8 @@ function addPhotoMarkers() {
     const photoIndex = photos.indexOf(photo);
     const hasLandmarkNo = toLandmarkValue(photo.landmarkNo) != null;
     const displayText = hasLandmarkNo ? escapeHtml(String(photo.landmarkNo).trim()) : '';
-    const sz = isMobile ? (hasLandmarkNo ? [18, 18] : [10, 10]) : (hasLandmarkNo ? [32, 32] : [19, 19]);
-    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [5, 5]) : (hasLandmarkNo ? [16, 16] : [10, 10]);
+    const sz = isMobile ? (hasLandmarkNo ? [17, 17] : [8, 8]) : (hasLandmarkNo ? [25, 25] : [13, 13]);
+    const anchor = isMobile ? (hasLandmarkNo ? [9, 9] : [4, 4]) : (hasLandmarkNo ? [13, 13] : [7, 7]);
     const c = color || (hasLandmarkNo ? ROUTE_STYLE.main.color : '#999');
     const html = hasLandmarkNo
       ? `<span class="landmark-marker-num" style="background:${c};border-color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4),0 0 0 2px ${c}99;">${displayText}</span>`
@@ -2089,7 +2091,7 @@ function addPhotoMarkers() {
       iconSize: sz,
       iconAnchor: anchor,
     });
-    const marker = L.marker([photo.lat, photo.lng], { icon })
+    const marker = L.marker([photo.lat, photo.lng], { icon, zIndexOffset: hasLandmarkNo ? 1000 : 0 })
       .addTo(map)
       .bindPopup(buildPhotoPopupHtml(photo, photoIndex), {
         maxWidth: 488,
@@ -2509,7 +2511,6 @@ function isMobileView() {
 }
 
 function openAllPhotosThumbnails() {
-  if (isMobileView()) return;
   const el = document.getElementById('allPhotosThumbnails');
   if (el.classList.contains('visible')) return;
   fitMapToFullExtent();
@@ -2900,12 +2901,12 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
   }
 }
 
-/** 親トリップのサムネイル画像を取得（アニメ or 子トリップの写真から） */
+/** 親トリップのサムネイル画像を取得（アニメの一番左 or 子トリップの写真から） */
 async function getParentTripThumbnail(parentTrip, children = []) {
   if (!parentTrip?.isParent) return null;
-  const src = parentTrip.thumbnailSource;
   const animeList = await getAnimeAllForTripDisplay(parentTrip.id, parentTrip.animeList);
   const getAnimeThumb = (a) => {
+    if (!a) return null;
     if (a?.thumbnail?.data) return { mime: a.thumbnail.mime || 'image/jpeg', data: a.thumbnail.data };
     if (a?.coverImage?.data) return { mime: 'image/jpeg', data: a.coverImage.data };
     if (a?.pageImages?.[0]?.data) return { mime: 'image/jpeg', data: a.pageImages[0].data };
@@ -2916,16 +2917,6 @@ async function getParentTripThumbnail(parentTrip, children = []) {
     const p = photos[idx ?? 0];
     return p?.data ? { mime: p.mime || 'image/jpeg', data: p.data } : null;
   };
-  if (src?.type === 'anime' && src.animeId) {
-    const a = animeList.find(x => x.id === src.animeId);
-    const t = getAnimeThumb(a);
-    if (t) return t;
-  }
-  if (src?.type === 'photo' && src.childId != null && src.photoIndex != null) {
-    const c = children.find(x => x.id === src.childId);
-    const t = getChildPhoto(c, src.photoIndex);
-    if (t) return t;
-  }
   if (animeList.length > 0) {
     const t = getAnimeThumb(animeList[0]);
     if (t) return t;
@@ -3142,18 +3133,13 @@ async function aggregateParentTripDataForAnime(parentId, parentName) {
   };
 }
 
-/** 旅行記HTMLを取得（親トリップの場合は子トリップの旅行記を参照） */
+/** 旅行記HTMLを取得（親トリップの子トリップ集約は行わない） */
 async function resolveTravelogueForAnime(tripId) {
   const rawTripId = (typeof tripId === 'string' && tripId.startsWith('public_')) ? tripId.slice(7) : tripId;
   let html = (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent) ? _lastTravelogueHtmlContent : null;
   if (!html) html = await loadTravelogueHtmlFromDB(tripId);
   if (!html) html = await loadTravelogueHtmlFromDB(rawTripId);
   if (html) return { tripId, html, pdfData: null };
-  const trip = await getTripById(rawTripId) || await getTripById(tripId);
-  if (trip?.isParent && isEditor()) {
-    const aggregated = await aggregateParentTripDataForAnime(rawTripId, trip.name);
-    if (aggregated) return { tripId, html: null, pdfData: aggregated };
-  }
   return null;
 }
 
@@ -4033,6 +4019,7 @@ async function generateTraveloguePdf() {
     }
     setStatus('旅行記 Web ページを開きました（ページ内のボタンで PDF ダウンロード）');
     await renderPublicTripsPanel();
+    await refreshHeaderTravelogueButton();
   } catch (err) {
     setStatus(err.message || 'PDF 生成に失敗しました', true);
   }
@@ -4524,13 +4511,17 @@ async function loadTrip() {
     showPhoto(0, { popupOnly: true, skipMapZoom: true });
   }
   document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
+  await updateTripInfoDisplay(trip);
   const needGeocode = photos.some(p => p.lat != null && !p.placeName);
   if (needGeocode) {
     setStatus('地名を取得中…');
-    await fetchPlaceNamesForPhotos();
-    if (photos[currentIndex]) showPhoto(currentIndex, { popupOnly: true, skipMapZoom: true });
+    fetchPlaceNamesForPhotos().then(() => {
+      if (_currentViewingTripId !== id) return;
+      updateTripInfoDisplay(trip);
+      if (photos[currentIndex]) showPhoto(currentIndex, { popupOnly: true, skipMapZoom: true });
+      setStatus(`「${trip.name}」を読み込みました。${isPublicTrip ? '' : '写真・ポイントを追加できます。'}`);
+    }).catch(() => {});
   }
-  await updateTripInfoDisplay(trip);
   updateSaveButtonState();
   document.body.classList.toggle('parent-trip-view', !!(trip?.isParent && photos.length === 0));
   setStatus(`「${trip.name}」を読み込みました。${isPublicTrip ? '' : '写真・ポイントを追加できます。'}`);
@@ -4665,13 +4656,17 @@ async function loadTripAndShowPhoto(tripId, photoIndex) {
     if (idx >= 0) showPhoto(idx, { popupOnly: true, skipMapZoom: true });
   }
   document.getElementById('allPhotosThumbnails')?.classList.remove('visible');
+  await updateTripInfoDisplay(trip);
   const needGeocode = photos.some(p => p.lat != null && !p.placeName);
   if (needGeocode) {
     setStatus('地名を取得中…');
-    await fetchPlaceNamesForPhotos();
-    if (photos[currentIndex]) showPhoto(currentIndex, { popupOnly: true, skipMapZoom: true });
+    fetchPlaceNamesForPhotos().then(() => {
+      if (_currentViewingTripId !== tripId) return;
+      updateTripInfoDisplay(trip);
+      if (photos[currentIndex]) showPhoto(currentIndex, { popupOnly: true, skipMapZoom: true });
+      setStatus(`「${trip.name}」を読み込みました。${tripId.startsWith('public_') ? '' : '写真・ポイントを追加できます。'}`);
+    }).catch(() => {});
   }
-  await updateTripInfoDisplay(trip);
   updateSaveButtonState();
   closeTripListPanel();
   document.getElementById('tripSelect').value = tripId;
@@ -4706,6 +4701,8 @@ async function updateTripInfoDisplay(trip) {
       tripNameNav.style.display = 'none';
       tripNameNav.classList.remove('visible');
     }
+    const tripNav = document.getElementById('headerTripNav');
+    if (tripNav) tripNav.style.display = 'none';
     const sep = document.getElementById('headerControlsSep');
     if (sep) sep.style.display = 'none';
     if (metaRow) metaRow.style.display = 'none';
@@ -4715,6 +4712,7 @@ async function updateTripInfoDisplay(trip) {
       mapOverlay.textContent = '';
       mapOverlay.classList.remove('visible');
     }
+    updateHeaderTravelogueButton(null);
     updateHeaderAnimeButton(null);
     return;
   }
@@ -4722,16 +4720,17 @@ async function updateTripInfoDisplay(trip) {
     tripNameNav.style.display = '';
     tripNameNav.classList.add('visible');
   }
+  if (isMobileView()) updateHeaderTripNav(trip);
   const sep = document.getElementById('headerControlsSep');
   if (sep) sep.style.display = '';
   let countText;
   if (trip?.isParent && !hasPhotos) {
     countText = `子トリップ（${childrenCount}件）`;
     if (name && !isMobileView()) countText = `${name}（${childrenCount}件）`;
-    else if (name && isMobileView()) countText = String(name).slice(0, 5) + (childrenCount > 0 ? `（${childrenCount}）` : '');
+    else if (name && isMobileView()) countText = String(name).slice(0, 4) + (childrenCount > 0 ? `（${childrenCount}）` : '');
   } else {
     countText = isMobileView()
-      ? (hasPhotos && name ? String(name).slice(0, 5) : hasPhotos ? `写真（${photos.length}枚）` : (name ? String(name).slice(0, 5) : 'トリップ'))
+      ? (hasPhotos && name ? String(name).slice(0, 4) : hasPhotos ? `写真（${photos.length}枚）` : (name ? String(name).slice(0, 4) : 'トリップ'))
       : (hasPhotos ? `写真（${photos.length}枚）` : (name || 'トリップ'));
   }
   if (nameEl) nameEl.textContent = countText;
@@ -4820,57 +4819,212 @@ async function updateTripInfoDisplay(trip) {
       gpxInfoEl.style.display = 'none';
     }
   }
+  updateHeaderTravelogueButton(trip);
   updateHeaderAnimeButton(trip);
 }
 
-/** ヘッダーのアニメボタン表示制御（アニメがある時のみ表示） */
-async function updateHeaderAnimeButton(tripOrNull) {
-  const btn = document.getElementById('headerAnimeBtn');
-  if (!btn) return;
+/** 旅行記を開く（ヘッダー・メニューボタン用） */
+async function openTravelogueForCurrentTrip() {
   const tripId = _currentViewingTripId || currentTripId;
-  if (!tripId || !tripOrNull) {
-    btn.style.display = 'none';
-    btn.onclick = null;
+  if (!tripId) return;
+  const rawTripId = tripId.startsWith('public_') ? tripId.slice(7) : tripId;
+  let trip = null;
+  if (tripId.startsWith('public_')) {
+    trip = publicTrips.find(t => t.id === rawTripId || t.id === tripId);
+  } else {
+    trip = await getTripById(rawTripId);
+  }
+  let htmlContent = trip?.travelogueHtml ||
+    ((_lastTravelogueTripId === tripId || _lastTravelogueTripId === rawTripId) ? _lastTravelogueHtmlContent : null);
+  if (!htmlContent) htmlContent = await loadTravelogueHtmlFromDB(rawTripId);
+  if (htmlContent) {
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    openUrlInPopupOrModal(blobUrl, '旅行記');
+  } else {
+    setStatus('旅行記を開けません。再度「旅行記生成」してください。', true);
+  }
+}
+
+/** ヘッダー・メニューの旅行記ボタン表示制御（旅行記がある時のみ表示） */
+function updateHeaderTravelogueButton(tripOrNull) {
+  const headerBtn = document.getElementById('headerTravelogueBtn');
+  const menuBtn = document.getElementById('menuTravelogueBtn');
+  const tripId = _currentViewingTripId || currentTripId;
+  const rawTripId = tripId?.startsWith('public_') ? tripId.slice(7) : tripId;
+  const travelogueInfo = getTravelogueInfo(tripId) || getTravelogueInfo(rawTripId);
+  const embeddedTravelogue = tripOrNull?.travelogueHtml;
+  const hasLink = travelogueInfo || !!embeddedTravelogue || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent) || (_lastTravelogueTripId === rawTripId && _lastTravelogueHtmlContent);
+  if (!hasLink || !tripId) {
+    if (headerBtn) { headerBtn.style.display = 'none'; headerBtn.onclick = null; }
+    if (menuBtn) { menuBtn.style.display = 'none'; menuBtn.onclick = null; }
+    return;
+  }
+  if (headerBtn) { headerBtn.style.display = ''; headerBtn.title = '旅行記を表示'; headerBtn.onclick = () => openTravelogueForCurrentTrip(); }
+  if (menuBtn) { menuBtn.style.display = ''; menuBtn.title = '旅行記を表示'; menuBtn.onclick = () => openTravelogueForCurrentTrip(); }
+}
+
+/** 現在のトリップを取得してヘッダー旅行記ボタンを更新（旅行記生成後など） */
+async function refreshHeaderTravelogueButton() {
+  const tripId = _currentViewingTripId || currentTripId;
+  if (!tripId) {
+    updateHeaderTravelogueButton(null);
+    return;
+  }
+  let trip = null;
+  if (tripId.startsWith('public_')) {
+    const origId = tripId.slice(7);
+    trip = publicTrips.find(t => t.id === origId || t.id === tripId);
+  } else {
+    trip = await getTripById(tripId);
+  }
+  updateHeaderTravelogueButton(trip || null);
+}
+
+/** ヘッダーのアニメボタン表示制御（アニメがある時のみ表示） */
+async function updateHeaderTripNav(trip) {
+  const tripNav = document.getElementById('headerTripNav');
+  const prevBtn = document.getElementById('tripPrevBtnHeader');
+  const nextBtn = document.getElementById('tripNextBtnHeader');
+  if (!tripNav || !prevBtn || !nextBtn || !isMobileView()) return;
+  const tripId = currentTripId || trip?.id;
+  if (!tripId) {
+    tripNav.style.display = 'none';
+    return;
+  }
+  try {
+    const groups = await getHomeTripsGrouped();
+    const flatTrips = groups.flatMap(g => [g.parent, ...g.children]);
+    const normId = (t) => (t._fromServer || t._isPublic ? 'public_' + (t.id || '').replace(/^public_/, '') : (t.id || '').replace(/^public_/, ''));
+    const idx = flatTrips.findIndex(t => normId(t) === tripId || t.id === tripId || (t.id || '').replace(/^public_/, '') === (tripId || '').replace(/^public_/, ''));
+    if (idx < 0) {
+      tripNav.style.display = 'none';
+      return;
+    }
+    tripNav.style.display = '';
+    const prevTrip = idx > 0 ? flatTrips[idx - 1] : null;
+    const nextTrip = idx < flatTrips.length - 1 ? flatTrips[idx + 1] : null;
+    prevBtn.disabled = !prevTrip;
+    nextBtn.disabled = !nextTrip;
+    prevBtn.onclick = prevTrip ? () => loadTripAndShowPhoto(normId(prevTrip), 0) : null;
+    nextBtn.onclick = nextTrip ? () => loadTripAndShowPhoto(normId(nextTrip), 0) : null;
+  } catch (_) {
+    tripNav.style.display = 'none';
+  }
+}
+
+async function updateHeaderAnimeButton(tripOrNull) {
+  const headerBtn = document.getElementById('headerAnimeBtn');
+  const menuBtn = document.getElementById('menuAnimeBtn');
+  const tripId = _currentViewingTripId || currentTripId;
+  const rawTripId = tripId?.startsWith('public_') ? tripId.slice(7) : tripId;
+  const hide = () => {
+    if (headerBtn) { headerBtn.style.display = 'none'; headerBtn.onclick = null; }
+    if (menuBtn) { menuBtn.style.display = 'none'; menuBtn.onclick = null; }
     updateHeaderVideoButton(null);
+  };
+  if (!tripId || !tripOrNull) {
+    hide();
     return;
   }
   try {
     const allItems = await getAnimeAllForTripDisplay(tripId, tripOrNull.animeList);
     if (allItems.length === 0) {
-      btn.style.display = 'none';
-      btn.onclick = null;
+      if (headerBtn) { headerBtn.style.display = 'none'; headerBtn.onclick = null; }
+      if (menuBtn) { menuBtn.style.display = 'none'; menuBtn.onclick = null; }
       updateHeaderVideoButton(tripOrNull);
       return;
     }
-    btn.style.display = '';
-    btn.title = 'アニメ画像を表示';
     const allIds = allItems.map(x => x.id);
     const embeddedAnime = tripOrNull.animeList;
-    btn.onclick = () => openAnimeFromData(allItems[0].id, {
+    const onClick = () => openAnimeFromData(allItems[0].id, {
       animeIds: allIds,
       currentIndex: 0,
       animeList: embeddedAnime || allItems
     });
+    if (headerBtn) { headerBtn.style.display = ''; headerBtn.title = 'アニメ画像を表示'; headerBtn.onclick = onClick; }
+    if (menuBtn) { menuBtn.style.display = ''; menuBtn.title = 'アニメ画像を表示'; menuBtn.onclick = onClick; }
   } catch (_) {
-    btn.style.display = 'none';
-    btn.onclick = null;
+    if (headerBtn) { headerBtn.style.display = 'none'; headerBtn.onclick = null; }
+    if (menuBtn) { menuBtn.style.display = 'none'; menuBtn.onclick = null; }
   }
   updateHeaderVideoButton(tripOrNull);
 }
 
+/** 動画URLをYouTube/Vimeoのembed用に変換、または直接再生用のURLを返す */
+function getVideoEmbedUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const u = url.trim();
+  const ytMatch = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
+  const vimeoMatch = u.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`;
+  return null;
+}
+
+/** モバイル：地図エリアで動画を再生するオーバーレイを表示 */
+function openMobileVideoOverlay(videoUrl) {
+  if (!videoUrl || !isMobileView()) return;
+  const overlay = document.getElementById('mobileVideoOverlay');
+  const content = document.getElementById('mobileVideoContent');
+  const backBtn = document.getElementById('mobileVideoBackBtn');
+  if (!overlay || !content || !backBtn) return;
+  content.innerHTML = '';
+  const embedUrl = getVideoEmbedUrl(videoUrl);
+  if (embedUrl) {
+    const iframe = document.createElement('iframe');
+    iframe.src = embedUrl;
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+    iframe.allowFullscreen = true;
+    content.appendChild(iframe);
+  } else {
+    const video = document.createElement('video');
+    video.src = videoUrl;
+    video.controls = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    content.appendChild(video);
+  }
+  overlay.classList.add('visible');
+  backBtn.onclick = closeMobileVideoOverlay;
+}
+
+/** モバイル：動画オーバーレイを閉じて地図に戻る */
+function closeMobileVideoOverlay() {
+  const overlay = document.getElementById('mobileVideoOverlay');
+  const content = document.getElementById('mobileVideoContent');
+  if (!overlay || !content) return;
+  const video = content.querySelector('video');
+  if (video) video.pause();
+  content.innerHTML = '';
+  overlay.classList.remove('visible');
+}
+
+/** 動画ボタンクリック時のハンドラ（モバイルは地図エリアで再生、デスクトップは新タブ） */
+function openVideo(videoUrl) {
+  if (!videoUrl) return;
+  if (isMobileView()) {
+    openMobileVideoOverlay(videoUrl);
+  } else {
+    window.open(videoUrl, '_blank', POPUP_FEATURES);
+  }
+}
+
 /** ヘッダーの動画ボタン表示制御（動画URLがある時のみ表示、アニメボタンの右横） */
 function updateHeaderVideoButton(tripOrNull) {
-  const btn = document.getElementById('headerVideoBtn');
-  if (!btn) return;
+  const headerBtn = document.getElementById('headerVideoBtn');
+  const menuBtn = document.getElementById('menuVideoBtn');
   const videoUrl = tripOrNull?.videoUrl?.trim();
-  if (!videoUrl) {
-    btn.style.display = 'none';
-    btn.onclick = null;
-    return;
-  }
-  btn.style.display = '';
-  btn.title = '動画を表示';
-  btn.onclick = () => openUrlInPopupOrModal(videoUrl, '動画');
+  const hide = () => {
+    if (headerBtn) { headerBtn.style.display = 'none'; headerBtn.onclick = null; }
+    if (menuBtn) { menuBtn.style.display = 'none'; menuBtn.onclick = null; }
+  };
+  const show = (url) => {
+    if (headerBtn) { headerBtn.style.display = ''; headerBtn.title = '動画を表示'; headerBtn.onclick = () => openVideo(url); }
+    if (menuBtn) { menuBtn.style.display = ''; menuBtn.title = '動画を表示'; menuBtn.onclick = () => openVideo(url); }
+  };
+  if (!videoUrl) { hide(); return; }
+  show(videoUrl);
 }
 
 /** 現在のトリップを取得してヘッダーアニメボタンを更新（アニメ生成後など） */
@@ -5213,12 +5367,14 @@ async function handleStampPhotoUpload(file) {
 
 let _characterUploadTripId = null;
 
-/** 親トリップのサムネイル選択モーダルを開く */
+/** 親トリップのサムネイル選択モーダルを開く（複数選択・並び替え・削除対応） */
 async function openParentThumbnailModal(parentId, parentTrip, children) {
   const grid = document.getElementById('parentThumbnailGrid');
+  const selectedEl = document.getElementById('parentThumbnailSelected');
   const modal = document.getElementById('parentThumbnailModal');
-  if (!grid || !modal) return;
+  if (!grid || !selectedEl || !modal) return;
   grid.innerHTML = '';
+  selectedEl.innerHTML = '';
 
   const animeList = await getAnimeAllForTripDisplay(parentId, parentTrip?.animeList);
   const candidates = [];
@@ -5231,6 +5387,18 @@ async function openParentThumbnailModal(parentId, parentTrip, children) {
       candidates.push({ type: 'anime', animeId: a.id, thumb, label: a._displayLabel || `アニメ${i + 1}` });
     }
   });
+
+  for (const c of children) {
+    const childAnimeList = await getAnimeAllForTripDisplay(c.id, c.animeList);
+    childAnimeList.forEach((a, i) => {
+      const thumb = a.thumbnail?.data ? { mime: a.thumbnail.mime || 'image/jpeg', data: a.thumbnail.data }
+        : a.coverImage?.data ? { mime: 'image/jpeg', data: a.coverImage.data }
+        : a.pageImages?.[0]?.data ? { mime: 'image/jpeg', data: a.pageImages[0].data } : null;
+      if (thumb) {
+        candidates.push({ type: 'anime', animeId: a.id, thumb, label: `${c.name} アニメ${i + 1}` });
+      }
+    });
+  }
 
   children.forEach((c) => {
     (c.photos || []).slice(0, 5).forEach((p, i) => {
@@ -5246,20 +5414,114 @@ async function openParentThumbnailModal(parentId, parentTrip, children) {
     });
   });
 
-  const currentSrc = parentTrip?.thumbnailSource;
-  const isSelected = (c) => {
-    if (!currentSrc) return false;
-    if (currentSrc.type === 'anime' && c.type === 'anime') return currentSrc.animeId === c.animeId;
-    if (currentSrc.type === 'photo' && c.type === 'photo') return currentSrc.childId === c.childId && currentSrc.photoIndex === c.photoIndex;
-    return false;
+  const srcRaw = parentTrip?.thumbnailSource;
+  let selected = Array.isArray(srcRaw) ? [...srcRaw] : (srcRaw ? [srcRaw] : []);
+
+  const toSource = (c) => c.type === 'anime' ? { type: 'anime', animeId: c.animeId } : { type: 'photo', childId: c.childId, photoIndex: c.photoIndex };
+  const findCandidate = (src) => candidates.find(c =>
+    (src.type === 'anime' && c.type === 'anime' && src.animeId === c.animeId) ||
+    (src.type === 'photo' && c.type === 'photo' && src.childId === c.childId && src.photoIndex === c.photoIndex)
+  );
+
+  const saveAndRefresh = async () => {
+    const trip = await getTripById(parentId);
+    if (!trip) return;
+    trip.thumbnailSource = selected.length === 0 ? undefined : selected.length === 1 ? selected[0] : selected;
+    trip.updatedAt = Date.now();
+    await saveTripWithOfflineSupport(trip);
+    await renderTripMenu();
+    await renderPublicTripsPanel();
+    await renderTripListPanel();
   };
+
+  const updateGridButtons = () => {
+    candidates.forEach((c, i) => {
+      const btn = grid.querySelector(`.parent-thumbnail-option[data-candidate-index="${i}"]`);
+      if (!btn) return;
+      const alreadyAdded = selected.some(s => findCandidate(s) === c);
+      btn.disabled = alreadyAdded;
+      btn.classList.toggle('disabled', alreadyAdded);
+    });
+  };
+
+  const renderSelected = () => {
+    selectedEl.innerHTML = '';
+    if (selected.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'parent-thumbnail-selected-empty';
+      empty.textContent = '選択中のサムネイルはありません。下から選んで追加してください。';
+      selectedEl.appendChild(empty);
+      return;
+    }
+    selected.forEach((src, idx) => {
+      const c = findCandidate(src);
+      if (!c) return;
+      const item = document.createElement('div');
+      item.className = 'parent-thumbnail-selected-item';
+      const img = document.createElement('img');
+      img.src = base64ToUrl(c.thumb.mime, c.thumb.data);
+      img.alt = c.label;
+      const label = document.createElement('span');
+      label.className = 'parent-thumbnail-selected-label';
+      label.textContent = c.label;
+      const btns = document.createElement('div');
+      btns.className = 'parent-thumbnail-selected-actions';
+      const leftBtn = document.createElement('button');
+      leftBtn.type = 'button';
+      leftBtn.className = 'parent-thumbnail-order-btn';
+      leftBtn.textContent = '←';
+      leftBtn.title = '左に移動';
+      leftBtn.disabled = idx === 0;
+      leftBtn.onclick = () => {
+        [selected[idx - 1], selected[idx]] = [selected[idx], selected[idx - 1]];
+        renderSelected();
+        saveAndRefresh();
+      };
+      const rightBtn = document.createElement('button');
+      rightBtn.type = 'button';
+      rightBtn.className = 'parent-thumbnail-order-btn';
+      rightBtn.textContent = '→';
+      rightBtn.title = '右に移動';
+      rightBtn.disabled = idx === selected.length - 1;
+      rightBtn.onclick = () => {
+        [selected[idx], selected[idx + 1]] = [selected[idx + 1], selected[idx]];
+        renderSelected();
+        saveAndRefresh();
+      };
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'parent-thumbnail-delete-btn';
+      delBtn.textContent = '×';
+      delBtn.title = '削除';
+      delBtn.onclick = async () => {
+        selected = selected.filter((_, i) => i !== idx);
+        renderSelected();
+        await saveAndRefresh();
+      };
+      btns.appendChild(leftBtn);
+      btns.appendChild(rightBtn);
+      btns.appendChild(delBtn);
+      item.appendChild(img);
+      item.appendChild(label);
+      item.appendChild(btns);
+      selectedEl.appendChild(item);
+    });
+    updateGridButtons();
+    const clearBtn = grid.querySelector('.parent-thumbnail-option[data-default="1"]');
+    if (clearBtn) clearBtn.classList.toggle('selected', selected.length === 0);
+  };
+
+  renderSelected();
 
   const addDefaultOption = () => {
     const btn = document.createElement('button');
+    btn.dataset.default = '1';
     btn.type = 'button';
-    btn.className = 'parent-thumbnail-option' + (!currentSrc ? ' selected' : '');
-    btn.innerHTML = '<span class="parent-thumbnail-option-label">デフォルト</span><span class="parent-thumbnail-option-desc">（自動選択）</span>';
+    btn.className = 'parent-thumbnail-option' + (selected.length === 0 ? ' selected' : '');
+    btn.innerHTML = '<span class="parent-thumbnail-option-label">クリア</span><span class="parent-thumbnail-option-desc">（全て削除）</span>';
     btn.onclick = async () => {
+      selected = [];
+      renderSelected();
       const trip = await getTripById(parentId);
       if (!trip) return;
       trip.thumbnailSource = undefined;
@@ -5269,17 +5531,20 @@ async function openParentThumbnailModal(parentId, parentTrip, children) {
       await renderTripMenu();
       await renderPublicTripsPanel();
       await renderTripListPanel();
-      setStatus('サムネイルをデフォルトに戻しました');
+      setStatus('サムネイルをクリアしました');
     };
     grid.appendChild(btn);
   };
 
   addDefaultOption();
 
-  candidates.forEach((c) => {
+  candidates.forEach((c, i) => {
+    const src = toSource(c);
+    const alreadyAdded = selected.some(s => findCandidate(s) === c);
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'parent-thumbnail-option' + (isSelected(c) ? ' selected' : '');
+    btn.className = 'parent-thumbnail-option' + (alreadyAdded ? ' disabled' : '');
+    btn.disabled = alreadyAdded;
     const img = document.createElement('img');
     img.src = base64ToUrl(c.thumb.mime, c.thumb.data);
     img.alt = c.label;
@@ -5289,17 +5554,13 @@ async function openParentThumbnailModal(parentId, parentTrip, children) {
     btn.appendChild(img);
     btn.appendChild(label);
     btn.onclick = async () => {
-      const trip = await getTripById(parentId);
-      if (!trip) return;
-      trip.thumbnailSource = c.type === 'anime' ? { type: 'anime', animeId: c.animeId } : { type: 'photo', childId: c.childId, photoIndex: c.photoIndex };
-      trip.updatedAt = Date.now();
-      await saveTripWithOfflineSupport(trip);
-      modal.classList.remove('open');
-      await renderTripMenu();
-      await renderPublicTripsPanel();
-      await renderTripListPanel();
-      setStatus('サムネイルを設定しました');
+      if (alreadyAdded) return;
+      selected.push(src);
+      renderSelected();
+      await saveAndRefresh();
+      setStatus('サムネイルを追加しました');
     };
+    btn.dataset.candidateIndex = String(i);
     grid.appendChild(btn);
   });
 
@@ -5561,6 +5822,7 @@ async function getDisplayablePublicTripsGrouped() {
   const orderMap = config?.tripOrder && Array.isArray(config.tripOrder)
     ? new Map(config.tripOrder.map((id, i) => [id.replace(/^public_/, ''), i]))
     : null;
+  const newestFirst = isMobileView();
   const sortByOrder = (a, b) => {
     if (orderMap) {
       const ai = orderMap.get(a.id);
@@ -5569,7 +5831,8 @@ async function getDisplayablePublicTripsGrouped() {
       if (ai != null) return -1;
       if (bi != null) return 1;
     }
-    return getTripGpsDateTimestamp(a) - getTripGpsDateTimestamp(b);
+    const diff = getTripGpsDateTimestamp(a) - getTripGpsDateTimestamp(b);
+    return newestFirst ? -diff : diff;
   };
   roots.sort(sortByOrder);
   for (const arr of childrenByParent.values()) {
@@ -5902,67 +6165,23 @@ async function renderTripMenu() {
   content.style.setProperty('--trip-accent', _tripMenuAccent || PUBLIC_TRIP_COLORS[0]);
   const embeddedTravelogue = currentTrip?.travelogueHtml;
   let hasLink = travelogueInfo || !!embeddedTravelogue || (_lastTravelogueTripId === tripId && _lastTravelogueHtmlContent);
-  if (!hasLink && (currentTrip || _lastLoadedTripForMenu)?.isParent && isEditor()) {
-    const tripForAgg = currentTrip || _lastLoadedTripForMenu;
-    aggregateParentTripDataForAnime(rawTripId, tripForAgg?.name).then((aggregated) => {
-      if (aggregated?.photos?.length && _currentViewingTripId === tripId) {
-        const infoEl = document.getElementById('tripMenuTravelogueInfo');
-        const summaryBtns = content.querySelector('.trip-menu-summary-btns');
-        if (!infoEl && summaryBtns) {
-          const travelogueLinkEl = document.createElement('div');
-          travelogueLinkEl.className = 'trip-menu-travelogue-summary';
-          travelogueLinkEl.id = 'tripMenuTravelogueInfo';
-          travelogueLinkEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記</button>`;
-          summaryBtns.insertBefore(travelogueLinkEl, summaryBtns.firstElementChild);
-          const btn = travelogueLinkEl.querySelector('button');
-          if (btn) btn.onclick = async (e) => {
-            e.preventDefault();
-            const htmlContent = await loadTravelogueHtmlFromDB(rawTripId);
-            if (htmlContent) {
-              const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-              openUrlInPopupOrModal(URL.createObjectURL(blob), '旅行記');
-            } else setStatus('旅行記を開けません。再度「旅行記生成」してください。', true);
-            return false;
-          };
-          const animeBtn = document.getElementById('tripMenuAnimeBtn');
-          const animeCharBtn = document.getElementById('tripMenuAnimeCharBtn');
-          if (animeBtn) {
-            animeBtn.disabled = false;
-            animeBtn.onclick = () => {
-              const sel = document.getElementById('tripMenuAnimeTypeSelect');
-              const type = sel?.value || 'cover_aruku';
-              if (type.startsWith('cover_')) {
-                generateTravelAnime(tripId, type.replace('cover_', ''));
-              } else {
-                generateTravelAnimePage(tripId, type);
-              }
-            };
-          }
-          if (animeCharBtn) {
-            animeCharBtn.disabled = false;
-            animeCharBtn.onclick = () => openCharacterUploadModal(rawTripId);
-            const charPhotos = getCharacterPhotos(rawTripId).filter(p => p.data);
-            if (charPhotos.length > 0) {
-              const first = charPhotos[0];
-              const src = `data:${first.mime || 'image/jpeg'};base64,${first.data}`;
-              animeCharBtn.classList.add('trip-menu-char-btn-with-photo');
-              animeCharBtn.textContent = '';
-              animeCharBtn.innerHTML = '';
-              const img = document.createElement('img');
-              img.src = src;
-              img.alt = 'キャラ';
-              img.className = 'trip-menu-char-btn-img';
-              animeCharBtn.appendChild(img);
-              animeCharBtn.title = 'メインキャラの写真を追加・変更';
-            } else {
-              animeCharBtn.classList.remove('trip-menu-char-btn-with-photo');
-              animeCharBtn.textContent = 'キャラ';
-              animeCharBtn.title = 'メインキャラの人物写真を設定';
-            }
-          }
-        }
-      }
-    }).catch(() => {});
+
+  let parentTripChildren = [];
+  if (currentTrip?.isParent) {
+    if (isEditor()) {
+      const allTrips = await getMergedTrips();
+      const myTrips = allTrips.filter(t => !t.id?.startsWith('public_') && !t._isPublic);
+      parentTripChildren = myTrips.filter(t => t.parentTripId === rawTripId);
+      parentTripChildren = [...parentTripChildren].sort((a, b) => {
+        const ta = getTripGpsDateTimestamp(a);
+        const tb = getTripGpsDateTimestamp(b);
+        if (ta !== tb) return ta - tb;
+        return (a.updatedAt || 0) - (b.updatedAt || 0);
+      });
+    } else {
+      const group = groups.find(g => g.parent.id === rawTripId || g.parent.id === currentTrip?.id);
+      parentTripChildren = group?.children || [];
+    }
   }
 
   const headerSection = document.createElement('div');
@@ -5988,7 +6207,14 @@ async function renderTripMenu() {
   titleWrap.className = 'trip-menu-title-wrap';
   const titleEl = document.createElement('h2');
   titleEl.className = 'trip-menu-title';
-  titleEl.textContent = desc || name || 'トリップ';
+  const mainTitleText = desc || name || 'トリップ';
+  if (url) {
+    titleEl.innerHTML = escapeHtml(mainTitleText) + ' <span class="trip-menu-blog-link" role="button" tabindex="0" title="ブログを開く">(ブログ)</span>';
+    const blogLink = titleEl.querySelector('.trip-menu-blog-link');
+    if (blogLink) blogLink.onclick = (e) => { e.preventDefault(); openUrlInPopupOrModal(url, 'ブログ'); };
+  } else {
+    titleEl.textContent = mainTitleText;
+  }
   titleWrap.appendChild(titleEl);
   navRow.appendChild(prevBtn);
   navRow.appendChild(titleWrap);
@@ -6009,18 +6235,20 @@ async function renderTripMenu() {
 
   const summarySection = document.createElement('section');
   summarySection.className = 'trip-menu-summary-section';
-  const summaryLinksRow = document.createElement('div');
-  summaryLinksRow.className = 'trip-menu-summary-links-row';
-  const summaryBtns = document.createElement('div');
-  summaryBtns.className = 'trip-menu-summary-btns';
-  /* ボタン順: 旅行記, アニメ, ブログ, スタンプ（旅行記を生成した場合のみ表示） */
+  /* 1行目: 旅行記, アニメ, 動画 | 2行目: 写真, <, >, ▶︎再生（左寄せ） */
+  const row1 = document.createElement('div');
+  row1.className = 'trip-menu-controls-row trip-menu-controls-row1';
   if (hasLink) {
     const travelogueLinkEl = document.createElement('div');
     travelogueLinkEl.className = 'trip-menu-travelogue-summary';
     travelogueLinkEl.id = 'tripMenuTravelogueInfo';
     travelogueLinkEl.innerHTML = `<button type="button" class="trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn">旅行記</button>`;
-    summaryBtns.appendChild(travelogueLinkEl);
+    row1.appendChild(travelogueLinkEl);
   }
+  const animeBtnSlot = document.createElement('span');
+  animeBtnSlot.id = 'tripMenuAnimeBtnSlot';
+  animeBtnSlot.className = 'trip-menu-anime-btn-slot';
+  row1.appendChild(animeBtnSlot);
   const videoUrl = (currentTrip?.videoUrl || '').trim();
   if (videoUrl) {
     const videoBtn = document.createElement('button');
@@ -6028,34 +6256,47 @@ async function renderTripMenu() {
     videoBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn trip-menu-video-btn';
     videoBtn.textContent = '動画';
     videoBtn.title = '動画を表示';
-    videoBtn.onclick = () => openUrlInPopupOrModal(videoUrl, '動画');
-    const animeSummaryBtn = summaryBtns.querySelector('.trip-menu-anime-summary-btn');
-    if (animeSummaryBtn) {
-      animeSummaryBtn.after(videoBtn);
-    } else {
-      const afterTravelogue = summaryBtns.querySelector('.trip-menu-travelogue-summary');
-      summaryBtns.insertBefore(videoBtn, afterTravelogue?.nextElementSibling || summaryBtns.firstElementChild);
-    }
+    videoBtn.onclick = () => openVideo(videoUrl);
+    row1.appendChild(videoBtn);
   }
-  if (url) {
-    const blogBtn = document.createElement('button');
-    blogBtn.type = 'button';
-    blogBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn trip-menu-blog-btn';
-    blogBtn.textContent = 'ブログ';
-    blogBtn.onclick = () => openUrlInPopupOrModal(url, 'ブログ');
-    summaryBtns.appendChild(blogBtn);
+  const row2 = document.createElement('div');
+  row2.className = 'trip-menu-controls-row trip-menu-controls-row2 trip-menu-unified-controls';
+  if (photos.length > 0) {
+    const photoCount = document.createElement('span');
+    photoCount.className = 'trip-menu-photo-count trip-menu-photo-count-clickable';
+    photoCount.textContent = `写真（${photos.length}枚）`;
+    photoCount.title = 'クリックでサムネイルの表示・非表示を切り替え';
+    row2.appendChild(photoCount);
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'btn btn-secondary btn-sm photo-prev-btn';
+    prevBtn.id = 'tripMenuPrevBtn';
+    prevBtn.innerHTML = '<span class="trip-menu-btn-text-desktop">&lt; 前</span><span class="trip-menu-btn-text-mobile">前</span>';
+    row2.appendChild(prevBtn);
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'btn btn-secondary btn-sm photo-next-btn';
+    nextBtn.id = 'tripMenuNextBtn';
+    nextBtn.innerHTML = '<span class="trip-menu-btn-text-desktop">次 &gt;</span><span class="trip-menu-btn-text-mobile">次</span>';
+    row2.appendChild(nextBtn);
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'btn btn-primary btn-sm play-btn';
+    playBtn.id = 'tripMenuPlayBtn';
+    playBtn.disabled = photos.filter(p => p.lat != null && p.lng != null).length === 0;
+    playBtn.innerHTML = '<span class="play-btn-label-play">▶︎ 再生</span><span class="play-btn-label-stop" style="display:none">■ 停止</span>';
+    row2.appendChild(playBtn);
+    const intervalSelect = document.createElement('select');
+    intervalSelect.id = 'tripMenuIntervalSelect';
+    intervalSelect.className = 'trip-menu-interval-select';
+    intervalSelect.innerHTML = '<option value="1">1秒</option><option value="3" selected>3秒</option><option value="5">5秒</option>';
+    row2.appendChild(intervalSelect);
   }
-  if (landmarks.length > 0 && !isWebDeployment()) {
-    const stampBtn = document.createElement('button');
-    stampBtn.type = 'button';
-    stampBtn.className = 'trip-menu-travelogue-link trip-menu-travelogue-link-btn trip-menu-travelogue-summary-btn trip-menu-stamp-btn';
-    stampBtn.textContent = 'スタンプ';
-    stampBtn.title = 'Trip Stamps を表示';
-    stampBtn.onclick = () => openStampsModal(landmarks, tripId);
-    summaryBtns.appendChild(stampBtn);
-  }
-  summaryLinksRow.appendChild(summaryBtns);
-  summarySection.appendChild(summaryLinksRow);
+  const controlsWrap = document.createElement('div');
+  controlsWrap.className = 'trip-menu-controls trip-menu-summary-controls';
+  controlsWrap.appendChild(row1);
+  controlsWrap.appendChild(row2);
+  summarySection.appendChild(controlsWrap);
 
   if (isEditor()) {
     const editorRow = document.createElement('div');
@@ -6063,9 +6304,9 @@ async function renderTripMenu() {
     const showTravelogueBtn = true;
     editorRow.innerHTML = `
       ${showTravelogueBtn ? '<button type="button" class="btn btn-primary btn-sm" id="tripMenuTravelogueBtn">📝 旅行記生成</button>' : ''}
-      <div class="trip-menu-anime-gen-row">
-        <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeCharBtn" ${hasLink ? '' : 'disabled'} title="メインキャラの人物写真を設定">キャラ</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeBtn" ${hasLink ? '' : 'disabled'} title="${hasLink ? '旅行記から表紙・1/4〜4/4ページのアニメを生成' : '旅行記生成してから利用できます'}">🎬 アニメ生成</button>
+      ${hasLink ? `<div class="trip-menu-anime-gen-row">
+        <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeCharBtn" title="メインキャラの人物写真を設定">キャラ</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="tripMenuAnimeBtn" title="旅行記から表紙・1/4〜4/4ページのアニメを生成">🎬 アニメ生成</button>
         <select id="tripMenuAnimeTypeSelect" title="生成する種類を選択">
           <option value="cover_aruku">歩き方風表紙</option>
           <option value="cover_jump">ジャンプ風表紙</option>
@@ -6076,7 +6317,7 @@ async function renderTripMenu() {
           <option value="q3">3/4ページ</option>
           <option value="q4">4/4ページ</option>
         </select>
-      </div>
+      </div>` : ''}
     `;
     summarySection.appendChild(editorRow);
   }
@@ -6087,26 +6328,49 @@ async function renderTripMenu() {
   animeAllWrap.className = 'trip-menu-anime-all-wrap';
   animeAllWrap.id = 'tripMenuAnimeAll';
   summaryRow.appendChild(animeAllWrap);
+  if (isEditor()) {
+    const animeUploadRow = document.createElement('div');
+    animeUploadRow.className = 'trip-menu-anime-upload-row';
+    const uploadBtn = document.createElement('button');
+    uploadBtn.type = 'button';
+    uploadBtn.className = 'btn btn-secondary btn-sm';
+    uploadBtn.textContent = '📷 画像をアップロード';
+    uploadBtn.title = 'アニメ・画像をアップロードして表示';
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.multiple = true;
+    fileInput.style.display = 'none';
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async (e) => {
+      const files = Array.from(e.target.files || []);
+      fileInput.value = '';
+      if (files.length === 0) return;
+      const tripName = document.getElementById('tripNameInput')?.value?.trim() || 'トリップ';
+      setStatus('画像をアップロード中…');
+      let existingCount = (await listAnimeFromDB()).filter(a => a.tripId === rawTripId).length;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (!f.type.startsWith('image/')) continue;
+        try {
+          const result = await fileToBase64(f);
+          if (!result?.data) continue;
+          const thumbnail = { mime: result.mime || 'image/jpeg', data: result.data };
+          await saveAnimeToDB(rawTripId, tripName, [], thumbnail, [], null, { animeType: 'upload', order: existingCount + i });
+        } catch (err) {
+          console.error('画像アップロードエラー:', err);
+        }
+      }
+      await renderTripMenu();
+      await renderPublicTripsPanel();
+      setStatus(`${files.length}件の画像を追加しました`);
+    };
+    animeUploadRow.appendChild(uploadBtn);
+    animeUploadRow.appendChild(fileInput);
+    summaryRow.appendChild(animeUploadRow);
+  }
   summarySection.appendChild(summaryRow);
 
-  if (photos.length > 0) {
-    const controlsEl = document.createElement('div');
-    controlsEl.className = 'trip-menu-controls trip-menu-summary-controls';
-    controlsEl.innerHTML = `
-      <div class="trip-menu-controls-row">
-        <span class="trip-menu-photo-count">写真（${photos.length}枚）</span>
-        <button type="button" class="btn btn-secondary btn-sm photo-prev-btn" id="tripMenuPrevBtn"><span class="trip-menu-btn-text-desktop">前へ</span><span class="trip-menu-btn-text-mobile">&lt;&lt;</span></button>
-        <button type="button" class="btn btn-secondary btn-sm photo-next-btn" id="tripMenuNextBtn"><span class="trip-menu-btn-text-desktop">次へ</span><span class="trip-menu-btn-text-mobile">&gt;&gt;</span></button>
-        <button type="button" class="btn btn-primary btn-sm play-btn" id="tripMenuPlayBtn" disabled><span class="play-btn-label-play">▶︎ 再生</span><span class="play-btn-label-stop" style="display:none">■ 停止</span></button>
-        <select id="tripMenuIntervalSelect" class="trip-menu-interval-select">
-          <option value="1">1秒</option>
-          <option value="3" selected>3秒</option>
-          <option value="5">5秒</option>
-        </select>
-      </div>
-    `;
-    summarySection.appendChild(controlsEl);
-  }
   content.appendChild(summarySection);
 
   // イベント設定
@@ -6165,9 +6429,9 @@ async function renderTripMenu() {
   }
   getAnimeAllForTripDisplay(rawTripId, currentTrip?.animeList).then(async (allItems) => {
     const wrap = document.getElementById('tripMenuAnimeAll');
-    // モバイルではアニメボタンを表示しない
-    if (allItems.length > 0 && summaryBtns && !isMobileView()) {
-      const existingAnimeBtn = summaryBtns.querySelector('.trip-menu-anime-summary-btn');
+    const animeBtnSlot = document.getElementById('tripMenuAnimeBtnSlot');
+    if (allItems.length > 0 && animeBtnSlot) {
+      const existingAnimeBtn = animeBtnSlot.querySelector('.trip-menu-anime-summary-btn');
       if (!existingAnimeBtn) {
         const animeSummaryBtn = document.createElement('button');
         animeSummaryBtn.type = 'button';
@@ -6181,9 +6445,7 @@ async function renderTripMenu() {
           currentIndex: 0,
           animeList: embeddedAnime || undefined
         });
-        const afterTravelogue = summaryBtns.querySelector('.trip-menu-travelogue-summary');
-        const insertBefore = afterTravelogue ? afterTravelogue.nextElementSibling : summaryBtns.firstElementChild;
-        summaryBtns.insertBefore(animeSummaryBtn, insertBefore);
+        animeBtnSlot.appendChild(animeSummaryBtn);
       }
     }
     // モバイルではアニメ一覧を表示しない
@@ -6296,32 +6558,15 @@ async function renderTripMenu() {
   if (currentTrip?.isParent) {
     const childrenSection = document.createElement('section');
     childrenSection.className = 'trip-menu-children-section';
-    childrenSection.innerHTML = '<div class="trip-menu-children-list" id="tripMenuChildrenList"></div>' + (isEditor() ? '<div class="trip-menu-children-actions"><button type="button" class="btn btn-secondary btn-sm" id="tripMenuThumbnailSelectBtn">🖼 サムネイルを選択</button><button type="button" class="btn btn-secondary btn-sm menu-full" id="tripMenuAddChildBtn">＋ 子トリップを追加</button></div>' : '');
+    childrenSection.innerHTML = '<div class="trip-menu-children-list" id="tripMenuChildrenList"></div>' + (isEditor() ? '<div class="trip-menu-children-actions"><button type="button" class="btn btn-secondary btn-sm menu-full" id="tripMenuAddChildBtn">＋ 子トリップを追加</button></div>' : '');
     content.appendChild(childrenSection);
     const listEl = document.getElementById('tripMenuChildrenList');
     const addBtn = document.getElementById('tripMenuAddChildBtn');
-    const thumbBtn = document.getElementById('tripMenuThumbnailSelectBtn');
-    let children;
-    if (isEditor()) {
-      const allTrips = await getMergedTrips();
-      const myTrips = allTrips.filter(t => !t.id?.startsWith('public_') && !t._isPublic);
-      children = myTrips.filter(t => t.parentTripId === rawTripId);
-    } else {
-      const group = groups.find(g => g.parent.id === rawTripId || g.parent.id === currentTrip?.id);
-      children = group?.children || [];
-    }
+    const children = parentTripChildren;
     const childrenTitle = document.createElement('h3');
     childrenTitle.className = 'trip-menu-section-title';
     childrenTitle.textContent = `子トリップ${children.length}件`;
     childrenSection.insertBefore(childrenTitle, listEl);
-    if (isEditor()) {
-      children = [...children].sort((a, b) => {
-        const ta = getTripGpsDateTimestamp(a);
-        const tb = getTripGpsDateTimestamp(b);
-        if (ta !== tb) return ta - tb;
-        return (a.updatedAt || 0) - (b.updatedAt || 0);
-      });
-    }
     if (listEl) {
       listEl.innerHTML = '';
       const loadIdForChild = (t) => (t._fromServer ? 'public_' + t.id : t.id);
@@ -6370,9 +6615,6 @@ async function renderTripMenu() {
       });
       if (addBtn) addBtn.onclick = () => addChildTripUnder(rawTripId, name);
     }
-    if (thumbBtn) {
-      thumbBtn.onclick = () => openParentThumbnailModal(rawTripId, currentTrip, children);
-    }
   }
 
   if (photos.length > 0) {
@@ -6403,55 +6645,16 @@ async function renderTripMenu() {
     });
   }
 
-  if (landmarks.length > 0) {
+  if (landmarks.length > 0 && !isWebDeployment()) {
     const stampsEl = document.createElement('section');
     stampsEl.className = 'trip-menu-stamps';
-    stampsEl.innerHTML = '<h3 class="trip-menu-section-title">Trip Stamps</h3><div class="trip-menu-stamps-grid"></div>';
-    const grid = stampsEl.querySelector('.trip-menu-stamps-grid');
-    const tripId = _currentViewingTripId || currentTripId || '';
-    const stampPhotos = getStampPhotos();
-    landmarks.forEach(({ text, photoIndex }) => {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'trip-menu-stamp-card';
-      const key = `${tripId}_${photoIndex}`;
-      const stampPhoto = stampPhotos[key];
-      if (stampPhoto) {
-        card.classList.add('trip-menu-stamp-card-filled');
-        const img = document.createElement('img');
-        img.src = base64ToUrl(stampPhoto.mime, stampPhoto.data);
-        img.alt = text;
-        if (img.src.startsWith('blob:')) _tripMenuUrls.push(img.src);
-        const nameOverlay = document.createElement('span');
-        nameOverlay.className = 'trip-menu-stamp-name';
-        nameOverlay.textContent = text;
-        nameOverlay.title = 'クリックで写真を変更';
-        const check = document.createElement('span');
-        check.className = 'trip-menu-stamp-check';
-        check.textContent = '✅';
-        check.title = 'クリックで写真を変更';
-        const openUpload = (e) => {
-          e.stopPropagation();
-          if (isEditor()) openStampUploadModal(tripId, photoIndex, text);
-          else setStatus('スタンプの写真アップロードにはログインが必要です', true);
-        };
-        nameOverlay.onclick = openUpload;
-        check.onclick = openUpload;
-        card.appendChild(img);
-        card.appendChild(nameOverlay);
-        card.appendChild(check);
-        card.title = '写真エリア: 拡大表示 / 名前・✓: 写真を変更';
-      } else {
-        card.textContent = text;
-        card.title = 'クリックで写真をアップロード';
-      }
-      card.onclick = () => {
-        if (stampPhoto) showPhotoWithPopup(photoIndex);
-        else if (isEditor()) openStampUploadModal(tripId, photoIndex, text);
-        else setStatus('スタンプの写真アップロードにはログインが必要です', true);
-      };
-      grid.appendChild(card);
-    });
+    const stampBtn = document.createElement('button');
+    stampBtn.type = 'button';
+    stampBtn.className = 'btn btn-secondary btn-sm trip-menu-stamp-btn';
+    stampBtn.textContent = 'スタンプ';
+    stampBtn.title = 'Trip Stamps を表示';
+    stampBtn.onclick = () => openStampsModal(landmarks, tripId);
+    stampsEl.appendChild(stampBtn);
     content.appendChild(stampsEl);
   }
 
@@ -7363,8 +7566,21 @@ async function getMergedTripsRaw() {
   return allTrips.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
+/** getMergedTrips の短時間キャッシュ（トリップ表示時の重複呼び出し削減） */
+let _mergedTripsCache = null;
+let _mergedTripsCacheTime = 0;
+const _mergedTripsCacheTtl = 400;
+
+function invalidateMergedTripsCache() {
+  _mergedTripsCache = null;
+}
+
 /** IndexedDB + Firestore + 公開トリップをマージ。トリップ名が重複する場合は最新の1件のみ表示 */
 async function getMergedTrips() {
+  const now = Date.now();
+  if (_mergedTripsCache && (now - _mergedTripsCacheTime) < _mergedTripsCacheTtl) {
+    return _mergedTripsCache;
+  }
   let allTrips = await getMergedTripsRaw();
   const byName = new Map();
   for (const t of allTrips) {
@@ -7378,7 +7594,10 @@ async function getMergedTrips() {
     const n = (t.name || '').trim() || '(無題)';
     return byName.get(n)?.id === t.id;
   });
-  return deduped.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const result = deduped.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  _mergedTripsCache = result;
+  _mergedTripsCacheTime = Date.now();
+  return result;
 }
 
 /** 親トリップの子トリップ一覧を表示・更新 */
@@ -8250,17 +8469,23 @@ async function setup() {
     } else {
       if (window.firebaseAuth && typeof firebase !== 'undefined') {
         closeMenu();
+        const provider = new firebase.auth.GoogleAuthProvider();
         try {
-          await window.firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-          updateEditorUI();
-          await refreshTripList();
-          setStatus('Googleでログインしました');
+          if (isMobileView()) {
+            setStatus('Googleでログイン中…');
+            await window.firebaseAuth.signInWithRedirect(provider);
+          } else {
+            await window.firebaseAuth.signInWithPopup(provider);
+            updateEditorUI();
+            await refreshTripList();
+            setStatus('Googleでログインしました');
+          }
         } catch (err) {
           console.error('Google ログインエラー:', err);
-          if (err?.code === 'auth/popup-blocked') {
+          if (!isMobileView() && err?.code === 'auth/popup-blocked') {
             setStatus('ポップアップがブロックされました。リダイレクトでログインします…', true);
             try {
-              await window.firebaseAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+              await window.firebaseAuth.signInWithRedirect(provider);
             } catch (e) {
               setStatus('ブラウザのポップアップブロックを解除するか、別のブラウザでお試しください', true);
             }
@@ -8855,6 +9080,16 @@ async function setup() {
 
   await refreshTripList();
   updatePhotoNav();
+
+  if (isMobileView() && !currentTripId) {
+    const groups = await getHomeTripsGrouped();
+    const displayTrips = groups.flatMap(g => [g.parent, ...g.children]);
+    if (displayTrips.length > 0) {
+      const first = displayTrips[0];
+      const loadId = first._fromServer || first._isPublic ? 'public_' + first.id : first.id;
+      await loadTripAndShowPhoto(loadId, 0);
+    }
+  }
 
   // Firebase初期化完了後にパブリックトリップを再読み込み
   window.addEventListener('firebase-ready', async () => {
