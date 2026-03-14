@@ -2813,8 +2813,8 @@ async function resizeBase64ToBase64(mime, data, maxW, maxH, quality) {
 
 /** base64をBlobURLに変換（キャッシュ付き） */
 function base64ToUrl(mime, data) {
-  // キャッシュキー: データの先頭100文字（ハッシュ代わり）
-  const key = data.substring(0, 100);
+  // キャッシュキー: 長さ＋先頭＋末尾で一意性を確保（先頭100文字のみだと異なる画像が衝突する）
+  const key = `${data.length}:${data.substring(0, 100)}:${data.substring(Math.max(0, data.length - 80))}`;
 
   if (_blobUrlCache.has(key)) {
     return _blobUrlCache.get(key);
@@ -4694,6 +4694,7 @@ async function loadTrip() {
   } else {
     addPhotoMarkers();
   }
+  _lastLoadedTripForMenu = trip;
   await renderPublicTripsPanel();
 
   if (map) setMapToOsm();
@@ -4717,7 +4718,6 @@ async function loadTrip() {
   updateSaveButtonState();
   document.body.classList.toggle('parent-trip-view', !!(trip?.isParent && photos.length === 0));
   setStatus(`「${trip.name}」を読み込みました。${isPublicTrip ? '' : '写真・ポイントを追加できます。'}`);
-  perfEnd('loadTripAndShowPhoto');
 }
 
 async function loadTripAndShowPhoto(tripId, photoIndex) {
@@ -8115,10 +8115,16 @@ async function renderTripListPanel() {
     if (parent.isParent && !parent.photos?.length) {
       parentThumb = await getParentTripThumbnail(parent, children);
     }
+    const groupWrap = document.createElement('div');
+    groupWrap.className = 'trip-list-group';
+    const childrenWrap = document.createElement('div');
+    childrenWrap.className = 'trip-list-children';
     const renderTripItem = (trip, isChild = false, childIndex = -1, groupIdx = -1, thumbForParent = null) => {
       const item = document.createElement('div');
+      const hasChildItems = !isChild && parent.isParent && children.length > 0;
       const parentClass = !isChild && trip.isParent ? ' trip-list-item-parent' : '';
-      item.className = 'trip-list-item' + (isChild ? ' trip-list-item-child' : parentClass);
+      const expandableClass = hasChildItems ? ' trip-list-item-expandable' : '';
+      item.className = 'trip-list-item' + (isChild ? ' trip-list-item-child' : parentClass) + expandableClass;
       const tripColor = getTripColor(trip);
       item.style.setProperty('--trip-accent', tripColor);
       const photos = trip.photos || [];
@@ -8208,14 +8214,21 @@ async function renderTripListPanel() {
       };
     }
     header.onclick = () => {
-      if (item.classList.contains('expanded')) {
-        if (isEditor() && !trip._isPublic) {
-          item.classList.remove('expanded');
-        } else {
-          loadTripAndShowPhoto(tripId, 0);
-        }
+      if (hasChildItems) {
+        const willExpand = !groupWrap.classList.contains('expanded');
+        groupWrap.classList.toggle('expanded');
+        if (willExpand) item.classList.add('expanded');
+        else item.classList.remove('expanded');
       } else {
-        item.classList.add('expanded');
+        if (item.classList.contains('expanded')) {
+          if (isEditor() && !trip._isPublic) {
+            item.classList.remove('expanded');
+          } else {
+            loadTripAndShowPhoto(tripId, 0);
+          }
+        } else {
+          item.classList.add('expanded');
+        }
       }
     };
     if (trip._isPublic) header.title = 'クリックで読み込み';
@@ -8256,57 +8269,17 @@ async function renderTripListPanel() {
       };
       photosDiv.appendChild(div);
     });
-    return item;
-    };
 
-    const group = document.createElement('div');
-    group.className = 'trip-list-group';
-    const hasChildren = children.length > 0;
-    const parentItem = renderTripItem(parent, false, -1, groupIndex, parentThumb);
-
-    if (hasChildren) {
-      const expandIcon = document.createElement('span');
-      expandIcon.className = 'trip-list-expand-icon';
-      expandIcon.textContent = '▶';
-      expandIcon.setAttribute('aria-hidden', 'true');
-      parentItem.querySelector('.trip-list-item-info').insertBefore(expandIcon, parentItem.querySelector('.trip-list-item-info').firstChild);
-      parentItem.querySelector('.trip-list-item-header').onclick = () => {
-        const groupEl = parentItem.closest('.trip-list-group');
-        const childrenEl = groupEl?.querySelector('.trip-list-children');
-        if (childrenEl) {
-          const isExpanded = groupEl.classList.contains('expanded');
-          groupEl.classList.toggle('expanded');
-          expandIcon.textContent = isExpanded ? '▶' : '▼';
-        }
-      };
+    if (isChild) {
+      childrenWrap.appendChild(item);
     } else {
-      parentItem.querySelector('.trip-list-item-header').onclick = () => {
-        const tripId = parent._isPublic ? parent.id : parent.id;
-        if (parentItem.classList.contains('expanded')) {
-          if (isEditor() && !parent._isPublic) {
-            parentItem.classList.remove('expanded');
-          } else {
-            loadTripAndShowPhoto(tripId, 0);
-          }
-        } else {
-          parentItem.classList.add('expanded');
-        }
-      };
+      groupWrap.appendChild(item);
     }
-
-    group.appendChild(parentItem);
-    if (hasChildren) {
-      const childrenContainer = document.createElement('div');
-      childrenContainer.className = 'trip-list-children';
-      children.forEach((c, i) => {
-        const childItem = renderTripItem(c, true, i, groupIndex, null);
-        const childHeader = childItem.querySelector('.trip-list-item-header');
-        childHeader.onclick = () => loadTripAndShowPhoto(c._isPublic ? c.id : c.id, 0);
-        childrenContainer.appendChild(childItem);
-      });
-      group.appendChild(childrenContainer);
-    }
-    body.appendChild(group);
+    };
+    renderTripItem(parent, false, -1, groupIndex, parentThumb);
+    children.forEach((c, i) => renderTripItem(c, true, i, groupIndex, null));
+    groupWrap.appendChild(childrenWrap);
+    body.appendChild(groupWrap);
   }
 }
 
