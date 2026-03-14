@@ -50,20 +50,63 @@
 
     <!-- メニューパネル（右からスライド） -->
     <div class="menu-overlay" id="menuOverlay"></div>
-    <aside class="menu-panel" id="menuPanel">
+    <div class="menu-panels-wrapper" id="menuPanelsWrapper">
+      <aside class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+          <button type="button" class="settings-back" id="settingsBack" aria-label="戻る">‹</button>
+          <h2>設定</h2>
+        </div>
+        <div class="settings-body">
+          <section class="menu-section editor-only" id="aiSettingsSection">
+            <h3>AI 設定</h3>
+            <div class="menu-field">
+              <label for="aiProviderSelect">AI API:</label>
+              <select id="aiProviderSelect" class="menu-select">
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="claude">Claude</option>
+              </select>
+            </div>
+            <div class="menu-field">
+              <label for="aiModelSelect">モデル:</label>
+              <select id="aiModelSelect" class="menu-select"></select>
+            </div>
+            <div class="menu-field">
+              <label for="aiApiKeyInput">API Key:</label>
+              <input type="password" id="aiApiKeyInput" class="menu-input" placeholder="API Key を入力" autocomplete="off">
+            </div>
+            <div class="menu-row">
+              <button type="button" class="btn btn-secondary btn-sm" id="aiApiKeySaveBtn">保存</button>
+            </div>
+            <p class="menu-hint">API Key を保存すると、選択中のモデルがデフォルトで使用されます</p>
+          </section>
+          <section class="menu-section">
+            <h3>データ</h3>
+            <button type="button" class="btn btn-secondary menu-full desktop-only" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
+            <button type="button" class="btn btn-secondary menu-full" id="exportPublicBtn" title="ローカルの公開トリップを圧縮して保存、またはサーバーからダウンロード">📤 公開トリップをエクスポート</button>
+            <button type="button" class="btn btn-primary menu-full editor-only" id="uploadPublicToFirestoreBtn" title="表示中の公開トリップ（Day1 Shimanami 等）を Firestore にアップロード">☁️ 公開トリップを Firestore にアップロード</button>
+            <div class="menu-row editor-only">
+              <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
+              <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
+              <button type="button" class="btn btn-primary menu-full" id="syncLocalToFirestoreBtn" title="IndexedDB のトリップを Firestore に手動同期" style="display:none" onclick="syncAllLocalToFirestore()">☁️ Firestore に手動同期</button>
+            </div>
+            <div class="menu-row editor-only">
+              <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
+            </div>
+          </section>
+        </div>
+      </aside>
+      <aside class="menu-panel" id="menuPanel">
       <div class="menu-header">
         <h2>メニュー</h2>
         <button type="button" class="menu-close" id="menuClose" aria-label="閉じる">&times;</button>
       </div>
       <div class="menu-body">
         <p class="menu-app-desc">AirGo — 地図と写真でエア旅行した気分になるアプリ</p>
-        <div class="db-indicator" id="dbIndicator" title="現在のデータソース">—</div>
-        <div class="sync-status" id="syncStatus">
-          <span id="syncIndicator" class="sync-inactive">同期停止</span>
-          <span id="offlineQueueCount" style="display:none">未送信: <span>0</span>件</span>
-        </div>
+        <button type="button" class="btn btn-secondary btn-sm menu-full" id="helpBtn">❓ ヘルプ（使い方・設定）</button>
         <section class="menu-section menu-auth-section">
           <button type="button" class="btn btn-primary menu-full" id="authBtn">ログイン</button>
+          <button type="button" class="btn btn-secondary menu-full" id="openSettingsBtn">⚙️ 設定</button>
         </section>
         <section class="menu-section menu-mobile-controls" id="menuMobileControls">
           <h3>操作</h3>
@@ -147,7 +190,6 @@
           </div>
           <div class="menu-row editor-only">
             <button type="button" class="btn btn-secondary menu-full" id="openTripListPanelBtn" title="保存済みトリップ一覧">📋 Trip List</button>
-            <button type="button" class="btn btn-secondary menu-full" id="openPublicTripConfigBtn">📋 公開トリップの表示設定</button>
           </div>
         </section>
         <section class="menu-section editor-only" id="uploadSection">
@@ -165,44 +207,10 @@
           </div>
           <button type="button" class="btn btn-secondary menu-full" id="addPointBtn" title="地図上をクリックしてポイントを追加">📍 ポイントを追加</button>
         </section>
-        <section class="menu-section editor-only" id="aiSettingsSection">
-          <h3>設定</h3>
-          <div class="menu-field">
-            <label for="aiProviderSelect">AI API:</label>
-            <select id="aiProviderSelect" class="menu-select">
-              <option value="gemini-flash">Google Gemini（低価格）</option>
-              <option value="gemini-pro">Google Gemini（高性能）</option>
-              <option value="openai-mini">OpenAI（低価格）</option>
-              <option value="openai-pro">OpenAI（高性能）</option>
-            </select>
-          </div>
-          <div class="menu-field">
-            <label for="aiApiKeyInput">API Key:</label>
-            <input type="password" id="aiApiKeyInput" class="menu-input" placeholder="sk-... または API Key を入力" autocomplete="off">
-          </div>
-          <div class="menu-row">
-            <button type="button" class="btn btn-secondary btn-sm" id="aiApiKeySaveBtn">保存</button>
-          </div>
-        </section>
-        <section class="menu-section">
-          <button type="button" class="btn btn-secondary menu-full desktop-only" id="openDataFolderBtn" title="data フォルダの旅行記・旅行アニメを開く">📁 data フォルダを開く</button>
-          <button type="button" class="btn btn-secondary menu-full" id="exportPublicBtn" title="ローカルの公開トリップを圧縮して保存、またはサーバーからダウンロード">📤 公開トリップをエクスポート</button>
-          <button type="button" class="btn btn-primary menu-full editor-only" id="uploadPublicToFirestoreBtn" title="表示中の公開トリップ（Day1 Shimanami 等）を Firestore にアップロード">☁️ 公開トリップを Firestore にアップロード</button>
-          <div class="menu-row editor-only">
-            <input type="file" id="tripImportInput" accept=".json,application/json" hidden>
-            <button type="button" class="btn btn-secondary menu-full" id="tripImportBtn" title="JSONファイルからトリップを復元">📥 トリップをインポート</button>
-            <button type="button" class="btn btn-primary menu-full" id="syncLocalToFirestoreBtn" title="IndexedDB のトリップを Firestore に手動同期" style="display:none" onclick="syncAllLocalToFirestore()">☁️ Firestore に手動同期</button>
-          </div>
-          <div class="menu-row editor-only">
-            <button type="button" class="btn btn-secondary menu-full" id="cleanupStorageBtn" title="削除済みトリップ・非表示アニメ・孤立データを削除して容量を節約">🗑️ ストレージを最適化</button>
-          </div>
-        </section>
         <p class="menu-hint editor-only-hint" id="editorOnlyHint" style="display:none">公開トリップは閲覧可能です。編集・アップロードするにはGoogleでログインしてください</p>
-        <section class="menu-section">
-          <button type="button" class="btn btn-secondary menu-full" id="helpBtn">❓ ヘルプ（使い方・設定）</button>
-        </section>
       </div>
     </aside>
+    </div>
 
     <!-- エクスポート準備完了モーダル -->
     <div class="modal-overlay" id="exportReadyModal">

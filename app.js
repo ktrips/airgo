@@ -3,7 +3,26 @@
 const DB_NAME = 'airgo';
 const DB_VERSION = 5;
 const AI_PROVIDER_STORAGE_KEY = 'airgo_ai_provider';
+const AI_MODEL_STORAGE_KEY = 'airgo_ai_model';
 const AI_API_KEY_STORAGE_KEY = 'airgo_ai_api_key';
+
+const AI_MODELS = {
+  gemini: [
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash（高速・低価格）' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro（高性能）' },
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini（高速・低価格）' },
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'gpt-4-turbo', label: 'GPT-4 Turbo（高性能）' },
+  ],
+  claude: [
+    { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku（高速・低価格）' },
+    { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-opus-20240229', label: 'Claude 3 Opus（高性能）' },
+  ],
+};
 const PUBLIC_TRIP_CONFIG_KEY = 'airgo_public_trip_config';
 const MY_TRIP_LIST_ORDER_KEY = 'airgo_my_trip_list_order';
 const DELETED_TRIP_IDS_KEY = 'airgo_deleted_trip_ids';
@@ -116,13 +135,26 @@ function setCharacterPhotos(tripId, photos) {
 }
 
 function getAiApiProvider() {
-  const v = localStorage.getItem(AI_PROVIDER_STORAGE_KEY) || 'openai-mini';
-  const legacy = { openai: 'openai-mini', gemini: 'gemini-flash' };
-  return legacy[v] || v;
+  const v = localStorage.getItem(AI_PROVIDER_STORAGE_KEY) || 'gemini';
+  const legacy = { 'openai-mini': 'openai', 'openai-pro': 'openai', 'gemini-flash': 'gemini', 'gemini-pro': 'gemini' };
+  return legacy[v] || (['gemini', 'openai', 'claude'].includes(v) ? v : 'gemini');
 }
 
 function setAiApiProvider(v) {
-  localStorage.setItem(AI_PROVIDER_STORAGE_KEY, v || 'openai-mini');
+  localStorage.setItem(AI_PROVIDER_STORAGE_KEY, v || 'gemini');
+}
+
+function getAiApiModel() {
+  const provider = getAiApiProvider();
+  const stored = localStorage.getItem(AI_MODEL_STORAGE_KEY);
+  const models = AI_MODELS[provider] || AI_MODELS.gemini;
+  const valid = models.some(m => m.id === stored);
+  return valid ? stored : (models[0]?.id || 'gemini-2.0-flash');
+}
+
+function setAiApiModel(v) {
+  if (v) localStorage.setItem(AI_MODEL_STORAGE_KEY, v);
+  else localStorage.removeItem(AI_MODEL_STORAGE_KEY);
 }
 
 function getAiApiKey() {
@@ -136,11 +168,19 @@ function setAiApiKey(v) {
 
 function updateAiSettingsUI() {
   const providerSelect = document.getElementById('aiProviderSelect');
+  const modelSelect = document.getElementById('aiModelSelect');
   const apiKeyInput = document.getElementById('aiApiKeyInput');
   if (!providerSelect || !apiKeyInput) return;
   providerSelect.value = getAiApiProvider();
+  const models = AI_MODELS[providerSelect.value] || AI_MODELS.gemini;
+  if (modelSelect) {
+    modelSelect.innerHTML = models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+    modelSelect.value = getAiApiModel();
+    if (!models.some(m => m.id === modelSelect.value)) modelSelect.value = models[0]?.id || '';
+  }
   apiKeyInput.value = getAiApiKey();
-  apiKeyInput.placeholder = providerSelect.value.startsWith('gemini') ? 'API Key を入力' : 'sk-... を入力';
+  const placeholders = { gemini: 'API Key を入力', openai: 'sk-... を入力', claude: 'sk-ant-... を入力' };
+  apiKeyInput.placeholder = placeholders[providerSelect.value] || 'API Key を入力';
 }
 
 /** ウェブ（localhost 以外）でアクセスしているか */
@@ -260,8 +300,8 @@ function createStyledRouteLayer(route) {
   return group;
 }
 
-/** トリップ毎のルート用カラーパレット */
-const PUBLIC_TRIP_COLORS = ['#e1306c', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
+/** トリップ毎のルート用カラーパレット（ピンク→濃い紫のレインボー順・12色） */
+const PUBLIC_TRIP_COLORS = ['#e1306c', '#ec4899', '#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#6b21a8'];
 
 /** トリップまたはIDから色を返す（trip.color があればそれ、なければIDハッシュ） */
 function getTripColor(tripOrId) {
@@ -1219,14 +1259,17 @@ function extractPdfDataFromTravelogueHtml(html) {
   }
 }
 
-/** トリップを取得（ウェブでは Firestore、ローカルでは IndexedDB を優先） */
+/** トリップを取得
+ * デプロイ時: Firestore（クラウド）のみ使用。IndexedDBは使わない
+ * ローカル時: ログイン中は Firestore、未ログイン時は IndexedDB */
 async function getTripById(id) {
   if (!id) return null;
   const fromCache = firestoreTrips.find(t => t.id === id);
   if (fromCache) return fromCache;
-  return isWebDeployment() && useFirestoreAsPrimary()
-    ? loadTripFromFirestore(id)
-    : loadTripFromDB(id);
+  if (isWebDeployment()) {
+    return loadTripFromFirestore(id);
+  }
+  return useFirestoreAsPrimary() ? loadTripFromFirestore(id) : loadTripFromDB(id);
 }
 
 /** 写真のメタデータ（ランドマーク・説明・URL）をDBに直接保存。既存トリップの写真データを保持したまま更新。ポイントの場合は説明を名称としても使用 */
@@ -2852,11 +2895,10 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
 文体は「です・ます」調で、親しみやすく書いてください。`;
   const userPrompt = `以下のトリップ情報から旅行記を生成してください。\n\n${summary}`;
 
-  const geminiModel = provider === 'gemini-pro' ? 'gemini-2.5-pro' : 'gemini-2.0-flash';
-  const openaiModel = provider === 'openai-pro' ? 'gpt-4o' : 'gpt-4o-mini';
+  const model = getAiApiModel();
 
-  if (provider.startsWith('gemini')) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  if (provider === 'gemini') {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2873,7 +2915,7 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('AI からの応答が空です');
     return text.trim();
-  } else {
+  } else if (provider === 'openai') {
     const url = 'https://api.openai.com/v1/chat/completions';
     const res = await fetch(url, {
       method: 'POST',
@@ -2882,7 +2924,7 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: openaiModel,
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -2898,6 +2940,32 @@ async function generateTravelogueWithAI(tripName, tripDesc, tripUrl, photoSummar
     const text = data?.choices?.[0]?.message?.content;
     if (!text) throw new Error('AI からの応答が空です');
     return text.trim();
+  } else if (provider === 'claude') {
+    const url = 'https://api.anthropic.com/v1/messages';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Claude API エラー: ${res.status} ${err}`);
+    }
+    const data = await res.json();
+    const text = data?.content?.[0]?.text;
+    if (!text) throw new Error('AI からの応答が空です');
+    return text.trim();
+  } else {
+    throw new Error(`未対応の AI プロバイダー: ${provider}`);
   }
 }
 
@@ -5156,8 +5224,8 @@ async function loadPublicTripsFromStaticFile() {
   }
 }
 
-/** パブリックトリップを読み込む（静的ファイル優先、Firestore は補完）
- * 静的ファイル（data/public-trips.json）が Firestore より多い場合は静的を優先 */
+/** パブリックトリップを読み込む
+ * デプロイ時: Firestore（クラウド）のみを使用。ローカルでは静的ファイル＋Firestoreを併用 */
 async function loadPublicTripsFromServer() {
   try {
     let firestoreTrips = [];
@@ -5172,22 +5240,32 @@ async function loadPublicTripsFromServer() {
       }
     }
 
-    staticTrips = await loadPublicTripsFromStaticFile();
-    console.log(`静的ファイル: ${staticTrips.length}件`);
-
-    // 静的ファイルの方が多い場合は静的を優先（Day1 Shimanami 等が含まれる場合）
-    if (staticTrips.length >= firestoreTrips.length && staticTrips.length > 0) {
-      publicTrips = staticTrips;
-      console.log(`静的ファイルから ${staticTrips.length}件のパブリックトリップを読み込みました`);
-    } else if (firestoreTrips.length > 0) {
+    if (isWebDeployment()) {
+      // デプロイ時: クラウド（Firestore）のみを使用。静的ファイルは使わない
       publicTrips = firestoreTrips;
-      console.log(`Firestoreから ${firestoreTrips.length}件のパブリックトリップを読み込みました`);
-    } else {
-      publicTrips = staticTrips.length > 0 ? staticTrips : [];
       if (publicTrips.length > 0) {
-        console.log(`静的ファイルから ${publicTrips.length}件を読み込みました`);
+        console.log(`Firestoreから ${publicTrips.length}件のパブリックトリップを読み込みました（クラウドのみ）`);
       } else {
         if (!isEditor()) setStatus('公開トリップがありません', true);
+      }
+    } else {
+      // ローカル: 静的ファイル＋Firestoreを併用
+      staticTrips = await loadPublicTripsFromStaticFile();
+      console.log(`静的ファイル: ${staticTrips.length}件`);
+
+      if (staticTrips.length >= firestoreTrips.length && staticTrips.length > 0) {
+        publicTrips = staticTrips;
+        console.log(`静的ファイルから ${staticTrips.length}件のパブリックトリップを読み込みました`);
+      } else if (firestoreTrips.length > 0) {
+        publicTrips = firestoreTrips;
+        console.log(`Firestoreから ${firestoreTrips.length}件のパブリックトリップを読み込みました`);
+      } else {
+        publicTrips = staticTrips.length > 0 ? staticTrips : [];
+        if (publicTrips.length > 0) {
+          console.log(`静的ファイルから ${publicTrips.length}件を読み込みました`);
+        } else {
+          if (!isEditor()) setStatus('公開トリップがありません', true);
+        }
       }
     }
 
@@ -6072,13 +6150,20 @@ async function renderPublicTripsPanel() {
     }
     groupWrap.appendChild(parentCard);
     if (children.length > 0) {
+      groupWrap.classList.add('expanded');
       const childrenWrap = document.createElement('div');
       childrenWrap.className = 'public-trip-children';
       const childrenInner = document.createElement('div');
       childrenInner.className = 'public-trip-children-inner';
       for (const child of children) {
         const idx = displayTrips.indexOf(child);
-        childrenInner.appendChild(renderTripCard(child, idx, { isChild: true }));
+        const childCard = renderTripCard(child, idx, { isChild: true });
+        childCard.onclick = (e) => {
+          e.stopPropagation();
+          const loadId = (child._fromServer || child._isPublic ? 'public_' : '') + (child.id || '').replace(/^public_/, '');
+          loadTripAndShowPhoto(loadId, 0);
+        };
+        childrenInner.appendChild(childCard);
       }
       childrenWrap.appendChild(childrenInner);
       groupWrap.appendChild(childrenWrap);
@@ -8042,11 +8127,66 @@ async function renderTripListPanel() {
       };
       photosDiv.appendChild(div);
     });
-
-    body.appendChild(item);
+    return item;
     };
-    renderTripItem(parent, false, -1, groupIndex, parentThumb);
-    children.forEach((c, i) => renderTripItem(c, true, i, groupIndex, null));
+
+    const group = document.createElement('div');
+    group.className = 'trip-list-group';
+    const hasChildren = children.length > 0;
+    const parentItem = renderTripItem(parent, false, -1, groupIndex, parentThumb);
+
+    if (hasChildren) {
+      const expandIcon = document.createElement('span');
+      expandIcon.className = 'trip-list-expand-icon';
+      expandIcon.textContent = '▶';
+      expandIcon.setAttribute('aria-hidden', 'true');
+      parentItem.querySelector('.trip-list-item-info').insertBefore(expandIcon, parentItem.querySelector('.trip-list-item-info').firstChild);
+      parentItem.querySelector('.trip-list-item-header').onclick = () => {
+        const groupEl = parentItem.closest('.trip-list-group');
+        const childrenEl = groupEl?.querySelector('.trip-list-children');
+        if (childrenEl) {
+          const isExpanded = groupEl.classList.contains('expanded');
+          groupEl.classList.toggle('expanded');
+          expandIcon.textContent = isExpanded ? '▶' : '▼';
+        }
+      };
+    } else {
+      parentItem.querySelector('.trip-list-item-header').onclick = () => {
+        const tripId = parent._isPublic ? parent.id : parent.id;
+        if (parentItem.classList.contains('expanded')) {
+          if (isEditor() && !parent._isPublic) {
+            parentItem.classList.remove('expanded');
+          } else {
+            loadTripAndShowPhoto(tripId, 0);
+          }
+        } else {
+          parentItem.classList.add('expanded');
+        }
+      };
+    }
+
+    group.appendChild(parentItem);
+    if (hasChildren) {
+      const childrenContainer = document.createElement('div');
+      childrenContainer.className = 'trip-list-children';
+      children.forEach((c, i) => {
+        const childItem = renderTripItem(c, true, i, groupIndex, null);
+        childItem.querySelector('.trip-list-item-header').onclick = () => {
+          if (childItem.classList.contains('expanded')) {
+            if (isEditor() && !c._isPublic) {
+              childItem.classList.remove('expanded');
+            } else {
+              loadTripAndShowPhoto(c._isPublic ? c.id : c.id, 0);
+            }
+          } else {
+            childItem.classList.add('expanded');
+          }
+        };
+        childrenContainer.appendChild(childItem);
+      });
+      group.appendChild(childrenContainer);
+    }
+    body.appendChild(group);
   }
 }
 
@@ -8161,13 +8301,24 @@ async function renderMenuMobileTripList() {
 function openMenu() {
   if (isEditor()) updateAiSettingsUI();
   document.getElementById('menuOverlay').classList.add('visible');
-  document.getElementById('menuPanel').classList.add('open');
+  document.getElementById('menuPanelsWrapper').classList.add('open');
+  document.getElementById('settingsPanel').classList.remove('open');
   if (isMobileView()) renderMenuMobileTripList();
 }
 
 function closeMenu() {
   document.getElementById('menuOverlay').classList.remove('visible');
-  document.getElementById('menuPanel').classList.remove('open');
+  document.getElementById('menuPanelsWrapper').classList.remove('open');
+  document.getElementById('settingsPanel').classList.remove('open');
+}
+
+function openSettings() {
+  if (isEditor()) updateAiSettingsUI();
+  document.getElementById('settingsPanel').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsPanel').classList.remove('open');
 }
 
 function openTripListPanel() {
@@ -8588,10 +8739,6 @@ async function setup() {
   document.getElementById('dataFolderModal').onclick = (e) => {
     if (e.target.id === 'dataFolderModal') document.getElementById('dataFolderModal').classList.remove('open');
   };
-  document.getElementById('openPublicTripConfigBtn').onclick = () => {
-    closeMenu();
-    openPublicTripConfigModal();
-  };
   document.getElementById('publicTripConfigClose').onclick = () => {
     document.getElementById('publicTripConfigModal').classList.remove('open');
   };
@@ -8731,6 +8878,10 @@ async function setup() {
   if (panelHamburgerBtn) panelHamburgerBtn.onclick = openMenu;
   document.getElementById('menuClose').onclick = closeMenu;
   document.getElementById('menuOverlay').onclick = closeMenu;
+  const openSettingsBtn = document.getElementById('openSettingsBtn');
+  if (openSettingsBtn) openSettingsBtn.onclick = openSettings;
+  const settingsBack = document.getElementById('settingsBack');
+  if (settingsBack) settingsBack.onclick = closeSettings;
 
   const prevHandler = () => { if (currentIndex > 0) showPhotoWithPopup(currentIndex - 1); };
   const nextHandler = () => { if (currentIndex < photos.length - 1) showPhotoWithPopup(currentIndex + 1); };
@@ -8786,19 +8937,35 @@ async function setup() {
   }
 
   const aiProviderSelect = document.getElementById('aiProviderSelect');
+  const aiModelSelect = document.getElementById('aiModelSelect');
   const aiApiKeyInput = document.getElementById('aiApiKeyInput');
   const aiApiKeySaveBtn = document.getElementById('aiApiKeySaveBtn');
   if (aiProviderSelect) {
     aiProviderSelect.addEventListener('change', () => {
-      setAiApiProvider(aiProviderSelect.value);
-      if (aiApiKeyInput) aiApiKeyInput.placeholder = aiProviderSelect.value.startsWith('gemini') ? 'API Key を入力' : 'sk-... を入力';
+      const p = aiProviderSelect.value;
+      setAiApiProvider(p);
+      const models = AI_MODELS[p] || AI_MODELS.gemini;
+      if (aiModelSelect) {
+        aiModelSelect.innerHTML = models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+        aiModelSelect.value = models[0]?.id || '';
+        setAiApiModel(aiModelSelect.value);
+      }
+      const placeholders = { gemini: 'API Key を入力', openai: 'sk-... を入力', claude: 'sk-ant-... を入力' };
+      if (aiApiKeyInput) aiApiKeyInput.placeholder = placeholders[p] || 'API Key を入力';
     });
+  }
+  if (aiModelSelect) {
+    aiModelSelect.addEventListener('change', () => setAiApiModel(aiModelSelect.value));
   }
   if (aiApiKeySaveBtn && aiApiKeyInput) {
     aiApiKeySaveBtn.addEventListener('click', () => {
       const key = (aiApiKeyInput.value || '').trim();
       setAiApiKey(key);
-      setStatus(key ? 'API Key を保存しました' : 'API Key を削除しました');
+      if (key) {
+        setAiApiProvider(aiProviderSelect?.value || 'gemini');
+        setAiApiModel(aiModelSelect?.value || '');
+      }
+      setStatus(key ? 'API Key とデフォルトモデルを保存しました' : 'API Key を削除しました');
     });
   }
 
